@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "ms-toolsai.jupyter",
+        "ms-toolsai.jupyter-keymap",
+        "ms-python.python",
+        "ms-toolsai.jupyter-renderers"
+    ]
+}
