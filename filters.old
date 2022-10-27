@@ -1,0 +1,18 @@
+WINDOW_SIZE = 64
+filters = torch.zeros((N_MELS - WINDOW_SIZE, N_MELS))
+for i in range(N_MELS - WINDOW_SIZE):
+    filters[i, i: i + WINDOW_SIZE] = torch.hann_window(WINDOW_SIZE)
+
+for i in range(0, N_MELS - WINDOW_SIZE, 10):
+    plt.plot(filters[i].numpy())
+
+def calc_filters(filters, w):
+    return
+
+up_filters = 1 + 0.7 * filters
+down_filters = 1 - 0.45 * filters
+
+plt.plot(down_filters[5], label="down[5]")
+plt.plot(up_filters[-1], label="up[-1]")
+plt.plot(up_filters[3] * down_filters[3], label="cancel")
+plt.legend()

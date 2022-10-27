@@ -62,7 +62,13 @@ def plot_fbank(fbank, title=None):
     axs.set_xlabel("mel bin")
     plt.show(block=False)
 
-
+def plot_mel_fbank(fbank, title=None):
+    fig, axs = plt.subplots(1, 1)
+    axs.set_title(title or "Filter bank")
+    axs.imshow(fbank, aspect="auto")
+    axs.set_ylabel("frequency bin")
+    axs.set_xlabel("mel bin")
+    plt.show(block=False)
 
 # SPEECH_WAVEFORM = wavs[0]
 # plot_waveform(SPEECH_WAVEFORM, SAMPLE_RATE, title="Original waveform")

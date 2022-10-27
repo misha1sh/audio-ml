@@ -1,0 +1,17 @@
+elf.main = nn.Sequential( # 1, 128, 9
+            nn.Conv2d(1, 4, kernel_size=3, padding="same"),  # 4, 128, 9
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=(4, 1)),  # 4, 32, 9
+
+            nn.Conv2d(4, 4, kernel_size=(4, 3), padding="same"), # 4, 32, 9
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=(4, 1)),  # 4, 8, 9
+
+            nn.Conv2d(4, 4, kernel_size=(4, 3), padding="same"), # 4, 8, 9
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=(2, 1)),  # 4, 4, 9
+
+            nn.Flatten(),
+            nn.Linear(4 * 4 * 9, 1),
+            nn.Sigmoid(),
+        )

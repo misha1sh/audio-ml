@@ -1,8 +1,11 @@
  sudo apt install --no-install-recommends nvidia-driver-510 nvidia-dkms-510 python3-pip htop ffmpeg
 
- pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116 librosa
+ pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116 librosa optuna
  pip3 install jupyterlab numpy scipy pandas python-dotenv pydot tqdm ipywidgets==7.7.2 matplotlib
  pip3 install markupsafe==2.0.1
+
+ pip install optuna-dashboard
+pip install optuna-fast-fanova gunicorn
 
  sudo sudo parted /dev/vdb
  #  mklabel gpt
