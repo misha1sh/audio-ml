@@ -1,0 +1,36 @@
+        self.encoder = nn.Sequential( # 1, 128, 9
+            nn.Conv2d(1, mk, kernel_size=(8, 9), padding="same"),  # mk, 128, 9
+            batch_normalization(mk),
+            suggest_activation("act_enc1", trial),
+            nn.MaxPool2d(kernel_size=(4, 1)),  # mk, 32, 9
+
+            nn.Conv2d(mk, mk, kernel_size=(4, 3), padding="same"), # mk, 32, 9
+            batch_normalization(mk),
+            suggest_activation("act_enc2", trial),
+            nn.MaxPool2d(kernel_size=(4, 1)),  # mk, 8, 9
+
+            nn.Conv2d(mk, 4, kernel_size=(4, 3), padding="same"), # 4, 8, 9
+            batch_normalization(4),
+            suggest_activation("act_enc3", trial),
+            nn.MaxPool2d(kernel_size=(2, 1)),  # 4, 4, 9
+        )
+
+        self.decoder = nn.Sequential(
+            nn.Conv2d(4, mk, kernel_size=(4, 3), padding="same"), # mk, 4, 9
+            suggest_activation("act_dec1", trial),
+            batch_normalization(mk),
+            nn.UpsamplingNearest2d(scale_factor=(2, 1)),  # mk, 8, 9
+
+            nn.Conv2d(mk, mk, kernel_size=(4, 3), padding="same"), # mk, 4, 9
+            suggest_activation("act_dec2", trial),
+            batch_normalization(mk),
+            nn.UpsamplingNearest2d(scale_factor=(4, 1)),  # mk, 32, 9
+
+            nn.Conv2d(mk, mk, kernel_size=(4, 3), padding="same"), # mk, 32, 9
+            suggest_activation("act_dec3", trial),
+            batch_normalization(mk),
+            nn.UpsamplingNearest2d(scale_factor=(4, 1)),  # mk, 128, 9
+
+            nn.Conv2d(mk, 1, kernel_size=(16, 3), padding="same"), # 1, 128, 9
+            suggest_activation("act_dec4", trial),
+        )
