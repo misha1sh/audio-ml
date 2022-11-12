@@ -10,7 +10,8 @@ class Spectrogramer:
                 n_mels):
         n_stft = n_fft // 2 + 1
         center = True
-        pad_mode = "reflect"
+        # pad_mode = "reflect"
+        pad_mode = "constant"
         norm = "slaney"
         mel_scale = "htk"
         power = 1.0

@@ -5,7 +5,8 @@ import zipfile
 import fma.utils as fma
 import librosa
 import audioread.exceptions
-
+import warnings
+import numpy as np
 from utils import ProgressParallel
 from joblib import delayed
 
@@ -20,12 +21,12 @@ CHECKSUMS = {
 }
 
 
-def download_file(file):
+def download_file(file, url):
     file_path = os.path.join(root, file)
     if os.path.isfile(file_path):
         return file_path
     print("donwloading", file, "to", file_path)
-    url = BASE_URL + file
+    # url = BASE_URL + file
     urllib.request.urlretrieve(url, file_path)
     return file_path
 

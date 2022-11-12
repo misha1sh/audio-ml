@@ -1,0 +1,146 @@
+# nn.Tanhshrink(),
+# nn.Sigmoid(),
+# nn.ReLU(),
+
+import importlib
+import trainer_mod
+import tuner
+
+importlib.reload(trainer_mod)
+importlib.reload(tuner)
+Trainer = trainer_mod.Trainer
+
+def remap(val, old_0, old_1, new_0, new_1):
+    return (val - old_0) / (old_1 - old_0) * (new_1 - new_0) + new_0
+
+def suggest_activation(name, trial):
+    cat = trial.suggest_categorical(name, ["tanh", "relu", "leakyrelu", "sigmoid"])
+    if cat == "tanh":
+        return nn.Tanh()
+    elif cat == "relu":
+        return nn.ReLU(True)
+    elif cat == "leakyrelu":
+        return nn.LeakyReLU(trial.suggest_float("leakyrelu",0.01, 0.01, 0.1, log=True))
+    elif cat == "sigmoid":
+        return nn.Sigmoid()
+
+class Autoencoder(nn.Module):
+    def __init__(self, max_val, trial):
+        super().__init__()
+
+        self.max_val = max_val
+
+        mk = trial.suggest_int("mid_kernels", 2, 2, 10)
+
+        if trial.suggest_int("batchnorm", 1, 0, 1) == 1:
+            batch_normalization = lambda channels: nn.BatchNorm2d(channels)
+        else:
+            batch_normalization = lambda channels: nn.Identity()
+
+        self.encoder = nn.Sequential( # 1, 128, 9
+            nn.Conv2d(1, mk, kernel_size=(8, 9), padding="same"),  # mk, 128, 9
+            batch_normalization(mk),
+            suggest_activation("act_enc1", trial),
+            nn.MaxPool2d(kernel_size=(1, 3)),  # mk, 128, 3
+
+            nn.Conv2d(mk, 2, kernel_size=(8, 3), padding="same"), # mk, 128, 9
+            batch_normalization(2),
+            suggest_activation("act_enc2", trial),
+            # nn.MaxPool2d(kernel_size=(1, 3)),  # mk, 128, 1
+
+            # nn.Conv2d(mk, 4, kernel_size=(4, 3), padding="same"), # 4, 16, 9
+            # batch_normalization(4),
+            # suggest_activation("act_enc3", trial),
+            # nn.MaxPool2d(kernel_size=(1, 3)),  # 4, 16, 3
+
+            # nn.Flatten(),
+            # nn.Linear(4*16*3, 4*16*3),
+            # nn.BatchNorm1d(4*16*3),
+            # nn.Tanh(),
+            # nn.Unflatten(1, (4, 16, 3))
+        )
+
+        self.decoder = nn.Sequential(
+            nn.Conv2d(4, mk, kernel_size=(4, 3), padding="same"), # mk, 8, 9
+            suggest_activation("act_dec1", trial),
+            batch_normalization(mk),
+            nn.UpsamplingNearest2d(scale_factor=(1, 3)),  # mk, 16, 9
+
+            nn.Conv2d(mk, mk, kernel_size=(4, 3), padding="same"), # mk, 16, 9
+            suggest_activation("act_dec2", trial),
+            batch_normalization(mk),
+            nn.UpsamplingNearest2d(scale_factor=(1, 3)),  # mk, 32, 9
+
+            # nn.Conv2d(mk, mk, kernel_size=(8, 3), padding="same"), # mk, 32, 9
+            # suggest_activation("act_dec3", trial),
+            # batch_normalization(mk),
+            # nn.UpsamplingNearest2d(scale_factor=(4, 1)),  # mk, 128, 9
+
+            nn.Conv2d(mk, 1, kernel_size=(16, 3), padding="same"), # 1, 128, 9
+            suggest_activation("act_dec4", trial),
+        )
+
+    def forward(self, x):
+        encoded = self.encoder(x / self.max_val)
+        decoded = self.decoder(encoded)
+        return decoded * self.max_val
+
+def accurancy(trainer):
+    real = trainer.x_test
+    with torch.no_grad():
+        predicted = trainer.model(real)
+
+    accurancy = ((real - predicted).abs()).mean().item()
+
+    return {
+        "accurancy": accurancy,
+    }
+
+def calc_loss_on_data(model, loss, x_gt):
+    x_pred = model(x_gt)
+    return loss(x_gt, x_pred)
+
+
+def create_trainer(trial, x):
+    max_val = x.max().item()
+    model = Autoencoder(max_val, trial)
+
+    optimizer = torch.optim.Adam(model.parameters(),
+                            lr=trial.suggest_float("lr", 7e-2, 1e-3, 1e-1, log=True),
+                            betas=(0.5, 0.999))
+    trainer = Trainer(model=model,
+                    loss=nn.MSELoss(),
+                    optimizer=optimizer,
+                    scheduler=ReduceLROnPlateau(optimizer, factor=0.2, threshold=1e-5, patience=50),
+                    sample_count=-1,
+                    calc_loss_on_data=calc_loss_on_data,
+                    additional_losses={
+                        "accurancy": accurancy,
+                    })
+
+    x_prepared = torch.unsqueeze(x, 1) # Add channel
+    trainer.set_data(x_prepared, test_count=50)
+
+    # trainer.data_lambda = get_noised
+    trainer.early_stop_lambda = lambda trainer: trainer.get_lr() < 1e-5
+    return trainer
+
+
+def objective(trial, x):
+    trainer = create_trainer(trial, x)
+    trainer.train(100, trial=trial, log=False)
+    # trainer.plot_history(100)
+
+    return trainer.history['test_loss'][-1]
+
+# cuda = torch.device('cuda:0')
+# tuned_params = tuner.tune(objective, n_trials=1000, timeout=60000)
+# tuned_params
+
+trial.params['batchnorm'] = 0
+trial.params['lr'] = 0.005
+trial.params['mid_kernels'] = 8
+trainer = create_trainer(trial, x)
+trainer.scheduler = ReduceLROnPlateau(trainer.optimizer, factor=0.7, threshold=1e-2, patience=20)
+trainer.train(5000, trial=trial, log=True)
+trainer.plot_history(100)
