@@ -5,8 +5,12 @@ from tqdm.notebook import tqdm
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-import librosa
+# import librosa
+import os
+import urllib
+import zipfile
 
+root = "./cache"
 class ProgressParallel(Parallel):
     def __init__(self, use_tqdm=True, total=None, *args, **kwargs):
         self._use_tqdm = use_tqdm
@@ -23,6 +27,26 @@ class ProgressParallel(Parallel):
         self._pbar.n = self.n_completed_tasks
         self._pbar.refresh()
 
+
+
+def download_file(file, url):
+    file_path = os.path.join(root, file)
+    if os.path.isfile(file_path):
+        return file_path
+    print("donwloading", file, "to", file_path)
+    # url = BASE_URL + file
+    urllib.request.urlretrieve(url, file_path)
+    return file_path
+
+def unzip_file(file_path):
+    unzipped_dir = os.path.splitext(file_path)[0]
+    if os.path.isdir(unzipped_dir):
+        return unzipped_dir
+
+    print("extracting", file_path)
+    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+        zip_ref.extractall(root)
+    return unzipped_dir
 
 
 def plot_waveform(waveform, sr, title="Waveform"):

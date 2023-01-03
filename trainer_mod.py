@@ -15,38 +15,43 @@ def sample(sample_count, x):
     return x[idx]
 
 
-class PreheatSampler:
-    def __init__(self, initial_count, grow_amount, patience):
-        self.samples_count = initial_count
-        self.grow_amount = grow_amount
-        self.overfit_detector = EarlyStopping(patience=patience)
+# class PreheatSampler:
+#     def __init__(self, initial_count, grow_amount, patience):
+#         self.samples_count = initial_count
+#         self.grow_amount = grow_amount
+#         self.overfit_detector = EarlyStopping(patience=patience)
 
 
-    def update_loss(self, test_loss, time_passed):
-        if self.overfit_detector.need_stop(test_loss):
-            self.overfit_detector.reset()
-            self.samples_count += self.grow_amount
+#     def update_loss(self, test_loss, time_passed):
+#         if self.overfit_detector.need_stop(test_loss):
+#             self.overfit_detector.reset()
+#             self.samples_count += self.grow_amount
 
+#     def sample(self, x):
+#         return x[:self.samples_count]
+
+# class PreheatSamplerPerTime:
+#     def __init__(self, initial_count, grow_amount):
+#         self.initial_count  = initial_count
+#         self.samples_count = initial_count
+#         self.grow_amount = grow_amount
+
+#     def update_loss(self, test_loss, time_passed):
+#         self.samples_count = self.initial_count + math.ceil(self.grow_amount * time_passed)
+
+#     def sample(self, x):
+#         # return x[:self.samples_count]
+#         return sample(self.samples_count, x)
+
+
+
+# class PercentSampler:
+#     pass
+
+class NoSampler:
+    def update_loss(self, test_loss, time_passed): pass
     def sample(self, x):
-        return x[:self.samples_count]
-
-class PreheatSamplerPerTime:
-    def __init__(self, initial_count, grow_amount):
-        self.initial_count  = initial_count
-        self.samples_count = initial_count
-        self.grow_amount = grow_amount
-
-    def update_loss(self, test_loss, time_passed):
-        self.samples_count = self.initial_count + math.ceil(self.grow_amount * time_passed)
-
-    def sample(self, x):
-        # return x[:self.samples_count]
-        return sample(self.samples_count, x)
-
-
-
-class PercentSampler:
-    pass
+        return x
 
 
 class EarlyStopping:
@@ -91,17 +96,17 @@ class EarlyStoppingPerTime:
     def reset(self):
         self.best_loss = None
 
-
 class Trainer:
-    def __init__(self, model, loss, optimizer, scheduler, sampler, calc_loss_on_data, additional_losses):
+    def __init__(self, model, loss, optimizer, scheduler, additional_losses,
+            sampler=NoSampler()): # calc_loss_on_data
         self.device = torch.device('cuda:0')
         self.model = model.to(self.device)
         self.loss = loss
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.sampler = sampler
-        self.calc_loss_on_data = calc_loss_on_data
-        self.early_stop_lambda = lambda trainer: False
+        # self.calc_loss_on_data = calc_loss_on_data
+        self.early_stop_lambda = lambda trainer, test_loss, time_passed, log: False
         self.additional_losses = additional_losses
         self.history = {
             "train_loss": [],
@@ -109,26 +114,33 @@ class Trainer:
         }
         # self.history.update({i: [] for i in additional_losses})
 
-    def set_data(self, x, train_test_split=0.9, test_count=None):
+    def set_data(self, x, y, train_test_split=0.9, test_count=None):
+        assert x.shape[0] == y.shape[0]
         self.x = x.to(self.device)
+        self.y = y.to(self.device)
+
         total_len = self.x.shape[0]
         if test_count is not None:
             train_len = int(total_len - test_count)
         else:
-            train_len = int(0.9 * total_len)
+            train_len = int(train_test_split * total_len)
         test_len = int(total_len - train_len)
         x_train, x_test = torch.utils.data.random_split(self.x, [train_len, test_len])
         self.x_train, self.x_test = x_train.dataset[x_train.indices], x_test.dataset[x_test.indices]
+        self.y_train, self.y_test = self.y[x_train.indices], self.y[x_test.indices]
 
-    def calc_loss_on_data_internal(self, x):
-        return self.calc_loss_on_data(self.model, self.loss, x)
+    def calc_loss_on_data_internal(self, x_real, y_real):
+        y_pred = self.model(x_real)
+        err = self.loss(y_pred, y_real)
+        return err
 
-    def train_batch(self, x):
+    def train_batch(self, x_real, y_real):
         self.model.zero_grad()
-        err = self.calc_loss_on_data_internal(self.sampler.sample(x))
+        err = self.calc_loss_on_data_internal(self.sampler.sample(x_real), y_real)
         err.backward()
         self.optimizer.step()
-        self.scheduler.step(err)
+        if self.scheduler:
+            self.scheduler.step(err)
         return err.item()
 
     def predict(self, x):
@@ -137,13 +149,20 @@ class Trainer:
     def get_lr(self):
         return self.optimizer.param_groups[0]['lr']
 
-    def train(self, epochs, trial=None, log=True):
+    def train(self, epochs, batch=None, trial=None, log=True):
         report_period = (epochs // 4)
         start_time = time.time()
 
         for epoch in range(epochs):
-            train_loss = self.train_batch(self.x_train)
-            test_loss = self.calc_loss_on_data_internal(self.x_test).item()
+            if batch is None:
+                train_loss = self.train_batch(self.x_train, self.y_train)
+            else:
+                train_losses = []
+                for x, y in zip(torch.split(self.x_train, batch), torch.split(self.y_train, batch)):
+                    train_losses.append(self.train_batch(x, y))
+                train_loss = sum(train_losses) / len(train_losses)
+
+            test_loss = self.calc_loss_on_data_internal(self.x_test, self.y_test).item()
 
             self.history['train_loss'].append(train_loss)
             self.history['test_loss'].append(test_loss)
