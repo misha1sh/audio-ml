@@ -2,7 +2,7 @@ import os
 import numpy as np
 import hashlib
 MEM_CACHE = {}
-root = os.fspath("/home/misha-sh/projects/audio-ml/cache/")
+root = os.fspath("/home/misha-sh/audio-ml/cache/")
 
 def get_args_hash(args, kwargs):
     key = str(args + tuple(sorted(kwargs.items())))

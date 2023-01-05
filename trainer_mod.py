@@ -154,6 +154,7 @@ class Trainer:
         start_time = time.time()
 
         for epoch in range(epochs):
+            self.model.train()
             if batch is None:
                 train_loss = self.train_batch(self.x_train, self.y_train)
             else:
@@ -162,7 +163,9 @@ class Trainer:
                     train_losses.append(self.train_batch(x, y))
                 train_loss = sum(train_losses) / len(train_losses)
 
-            test_loss = self.calc_loss_on_data_internal(self.x_test, self.y_test).item()
+            self.model.eval()
+            with torch.no_grad():
+                test_loss = self.calc_loss_on_data_internal(self.x_test, self.y_test).item()
 
             self.history['train_loss'].append(train_loss)
             self.history['test_loss'].append(test_loss)

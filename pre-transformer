@@ -1,0 +1,48 @@
+class Model(nn.Module):
+    def __init__(self, **kwargs):
+        super().__init__()
+        N_words = INPUT_WORDS_CNT
+        N_variants = VARIANTS_CNT
+        N_features = FEATURES_CNT
+
+        # input is (N, N_words, N_variants, N_features)
+        # output is (N, N_words, )
+
+        # self.model = nn.Sequential(
+        #     nn.Flatten(1), # (N, N_words* N_variants *N_features)
+        #     nn.Linear(N_words* N_variants *N_features, 100),
+        #     nn.Tanh(),
+        #     nn.Linear(100, 100),
+        #     nn.ReLU(),
+        #     nn.Linear(100, TARGET_CLASSES_COUNT),
+        #     # nn.Tanh(),
+        #     # nn.Tanhshrink(),
+        #     # nn.Sigmoid(),
+        #     # nn.ReLU(),
+        # )
+        encoder_layer = nn.TransformerEncoderLayer(d_model=N_variants *N_features,
+                                   nhead=1, dim_feedforward=10,
+                                   dropout=0.1, activation=nn.ReLU(), batch_first=True)
+        self.model = nn.Sequential(
+            nn.Flatten(2), # (N, N_words, N_variants *N_features)
+            nn.TransformerEncoder(encoder_layer, num_layers=1),
+
+            nn.Flatten(1), # (N, N_words* N_variants *N_features)
+            # nn.Tanh(),
+            nn.Linear(N_words* N_variants *N_features, TARGET_CLASSES_COUNT),
+            # nn.ReLU(),
+            # nn.Linear(100, TARGET_CLASSES_COUNT),
+            # nn.Tanh(),
+            # nn.Tanhshrink(),
+            # nn.Sigmoid(),
+            # nn.ReLU(),
+        )
+
+
+    def forward(self, x):
+        return self.model(x)
+
+    # buffer_size = 0
+    # for buffer in model.buffers():
+    #     buffer_size += buffer.nelement() * buffer.element_size()
+    # return (param_size + buffer_size) / 1024**2
