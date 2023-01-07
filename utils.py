@@ -94,6 +94,29 @@ def plot_mel_fbank(fbank, title=None):
     axs.set_xlabel("mel bin")
     plt.show(block=False)
 
+
+
+def reverse_dict(d, priority_for_duplicates=[]):
+    res = {val: key for key, val in d.items()}
+    for key in priority_for_duplicates:
+        res[d[key]] = key
+    return res
+
+def run_proc(task):
+    import multiprocessing
+    print("starting proc")
+    p = multiprocessing.Process(target=task)
+    try:
+        p.start()
+        p.join()
+    except KeyboardInterrupt:
+        print("terminating proccess")
+        p.terminate()
+        from time import sleep
+        sleep(1)
+        print("killing")
+        p.kill()
+
 # SPEECH_WAVEFORM = wavs[0]
 # plot_waveform(SPEECH_WAVEFORM, SAMPLE_RATE, title="Original waveform")
 # melspec = spectrogrammer.wave2mel(Tensor(SPEECH_WAVEFORM))
