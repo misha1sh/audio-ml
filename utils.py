@@ -118,6 +118,17 @@ def run_proc(task):
         print("killing")
         p.kill()
 
+
+def chunks(multiple_lists, chunk_size):
+    for i in range(0, len(multiple_lists[0]), chunk_size):
+        yield tuple(l[i:i + chunk_size] for l in multiple_lists)
+def size_of_tensor(tensor):
+    return round(tensor.nelement() * tensor.element_size())
+def count_parameters(model):
+    param_size = 0
+    for param in model.parameters():
+        param_size += param.nelement() * param.element_size()
+    return param_size / 1024 ** 2
 # SPEECH_WAVEFORM = wavs[0]
 # plot_waveform(SPEECH_WAVEFORM, SAMPLE_RATE, title="Original waveform")
 # melspec = spectrogrammer.wave2mel(Tensor(SPEECH_WAVEFORM))

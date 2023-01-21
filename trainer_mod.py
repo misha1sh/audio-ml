@@ -116,44 +116,8 @@ class Trainer:
         self.enable_chunking = enable_chunking
         # self.history.update({i: [] for i in additional_losses})
 
-    def set_data(self, x, y, train_test_split=0.9, not_test_indices=[], test_count=None):
-        assert x.shape[0] == y.shape[0]
-        # self.x = x.to(self.device)
-        # self.y = y.to(self.device)
-
-        total_len = x.shape[0]
-        if test_count is not None:
-            train_len = int(total_len - test_count)
-        else:
-            train_len = int(train_test_split * total_len)
-        test_len = int(total_len - train_len)
-        print(1, psutil.virtual_memory().percent)
-        x_train, x_test = torch.utils.data.random_split(x, [train_len, test_len])
-        print(2, psutil.virtual_memory().percent)
-        s2 = set(not_test_indices.numpy())
-        print(3, psutil.virtual_memory().percent)
-        self.train_indices = torch.LongTensor(list(set(x_train.indices) | s2))
-        print(4, psutil.virtual_memory().percent)
-        self.test_indices = torch.LongTensor(list(set(x_test.indices) - s2))
-        print(5, psutil.virtual_memory().percent)
-
-        self.x_train, self.x_test = x[self.train_indices], x[self.test_indices]
-        del x
-        gc.collect()
-        print(6, psutil.virtual_memory().percent)
-        self.y_train, self.y_test = y[self.train_indices], y[self.test_indices]
-        print(7, psutil.virtual_memory().percent)
-        if not self.enable_chunking:
-            self.x_train = self.x_train.to(self.device)
-        else:
-            print(8, psutil.virtual_memory().percent)
-            self.x_train = self.x_train.pin_memory()
-
-        print(9, psutil.virtual_memory().percent)
-        self.x_test = self.x_test.to(self.device)
-        self.y_train = self.y_train.to(self.device)
-        self.y_test = self.y_test.to(self.device)
-
+    def set_data(self, dataset):
+        self.dataset = dataset
 
     def calc_loss_on_data_internal(self, x_real, y_real):
         y_pred = self.model(x_real)
@@ -187,28 +151,15 @@ class Trainer:
             self.model.train()
 
             train_losses = []
-            def train_in_batches(x_train_chunk, y_train_chunk):
-                if batch is None:
-                    train_losses.append(self.train_batch(x_train_chunk, y_train_chunk))
-                else:
-                    for x, y in zip(torch.split(x_train_chunk, batch), torch.split(y_train_chunk, batch)):
-                        train_losses.append(self.train_batch(x, y))
-
-            if self.enable_chunking:
-                for x_train_chunk, y_train_chunk in zip(torch.split(self.x_train, chunk_size), \
-                            torch.split(self.y_train, chunk_size)):
-                    x_train_chunk_gpu = x_train_chunk.to(self.device)
-                    train_in_batches(x_train_chunk_gpu, y_train_chunk)
-                    del x_train_chunk_gpu
-
-            else:
-                train_in_batches(self.x_train, self.y_train)
+            for x, y in self.dataset.iter_train_batches():
+                train_losses.append(self.train_batch(x, y))
 
             train_loss = sum(train_losses) / len(train_losses)
 
             self.model.eval()
             with torch.no_grad():
-                test_loss = self.calc_loss_on_data_internal(self.x_test, self.y_test).item()
+                test_loss = self.calc_loss_on_data_internal(self.dataset.x_test.to(self.device),
+                                                            self.dataset.y_test).item()
 
             self.history['train_loss'].append(train_loss)
             self.history['test_loss'].append(test_loss)

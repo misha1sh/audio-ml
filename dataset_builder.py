@@ -44,6 +44,9 @@ def undef_word_features(params):
 
 
 PNCT_TAGS = {
+    '.': 'PUNCT_DOT',
+    '!': 'PUNCT_DOT',
+    '?': 'PUNCT_DOT',
     ',': 'PUNCT_COMMA',
     '-': 'PUNCT_DASH',
     '.':'PUNCT_DOT',
@@ -109,16 +112,21 @@ def get_input_and_output_tokens(tokens, params):
 
     next_output_id = NO_PUNCT
     for token in tokens:
-        puntuation_idx = params["PUNCTUATION_TARGET"].get(token, None)
-        if puntuation_idx is not None:
-            next_output_id = puntuation_idx
+        punctuation_idx = params["PUNCTUATION_TARGET"].get(token, NO_PUNCT)
+        if params["RETAIN_LEFT_PUNCT"]:
+            input.append(token)
+            output.append(punctuation_idx)
+            continue
+
+        if punctuation_idx != NO_PUNCT:
+            next_output_id = punctuation_idx
             continue
 
         input.append(token)
         output.append(next_output_id)
         next_output_id = NO_PUNCT
 
-    for i in range(params["INPUT_WORDS_CNT_RIGHT"]):
+    for i in range(params["INPUT_WORDS_CNT_RIGHT"] + 1):
         input.append(PAD_TOKEN)
         output.append(NO_PUNCT)
 
@@ -165,16 +173,36 @@ def create_dataset_for_text(text, params):
     input_tokens, output = get_input_and_output_tokens(tokens, params)
     # print(list([ (j, i.item()) for i, j in zip(output, input_tokens) ]) )
     input = calculate_word_features_for_tokens(input_tokens, params)
-
     WORDS_LEFT = params["INPUT_WORDS_CNT_LEFT"]
     WORDS_RIGHT = params["INPUT_WORDS_CNT_RIGHT"]
     for i in range(WORDS_LEFT, len(input) - WORDS_RIGHT):
         take_sample = output[i] != 0 or random.random() < 0.1
         if not take_sample: continue
 
-        inp = input[i - WORDS_LEFT: i + WORDS_RIGHT]
+        if params["RETAIN_LEFT_PUNCT"]:
+            inp = torch.zeros_like(input[i - WORDS_LEFT: i + WORDS_RIGHT])
+            inp[:WORDS_LEFT] =  input[i - WORDS_LEFT: i]
+            inp_tokens = input_tokens[i - WORDS_LEFT: i]
+            cnt_tokens = WORDS_LEFT
+            for j in range(i, len(input)):
+                assert cnt_tokens == len(inp_tokens)
+                if cnt_tokens == WORDS_LEFT + WORDS_RIGHT:
+                    break
+                if output[j] == 0:
+                    inp[cnt_tokens] = input[j]
+                    inp_tokens.append(input_tokens[j])
+                    cnt_tokens += 1
+            assert cnt_tokens == len(inp_tokens)
+            if len(inp_tokens) != WORDS_LEFT + WORDS_RIGHT:
+                print(j, len(input), len(inp_tokens), WORDS_LEFT + WORDS_RIGHT)
+                print(input_tokens[i - WORDS_LEFT: i + WORDS_RIGHT])
+                assert len(inp_tokens) == WORDS_LEFT + WORDS_RIGHT
+
+        else:
+            inp_tokens = input_tokens[i - WORDS_LEFT: i + WORDS_RIGHT]
+            inp = input[i - WORDS_LEFT: i + WORDS_RIGHT]
+
         out = output[i]
-        inp_tokens = input_tokens[i - WORDS_LEFT: i + WORDS_RIGHT]
         infect = random.random() < params['INFECTED_TEXT_PROB']
         if infect:
             inp, inp_tokens = infect_tokens(inp, inp_tokens, params)
