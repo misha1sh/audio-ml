@@ -99,6 +99,7 @@ def plot_mel_fbank(fbank, title=None):
 def reverse_dict(d, priority_for_duplicates=[]):
     res = {val: key for key, val in d.items()}
     for key in priority_for_duplicates:
+        if key not in d: continue
         res[d[key]] = key
     return res
 
