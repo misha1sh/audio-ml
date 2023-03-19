@@ -1,0 +1,20 @@
+{
+  "name": "js_lib",
+  "version": "1.0.0",
+  "license": "MIT",
+  "files": [
+    "punctuator.js"
+  ],
+  "main": "punctuator.js",
+  "type": "module",
+  "dependencies": {
+    "chai": "^4.3.7",
+    "onnxruntime-web": "^1.13.1"
+  },
+  "devDependencies": {
+    "jest": "^29.4.1"
+  },
+  "scripts": {
+    "test": "jest"
+  }
+}

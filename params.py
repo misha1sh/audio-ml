@@ -25,7 +25,7 @@ def build_params(params):
 
     params["VARIANT_PROB_IDX"] = len(params["feature_tags_dict"])
 
-    params["PUNCTUATION_ALL"] = string.punctuation
+#     params["PUNCTUATION_ALL"] = string.punctuation
 
     params["INPUT_WORDS_CNT_RIGHT"] = params["INPUT_WORDS_CNT"] // 2
     params["INPUT_WORDS_CNT_LEFT"] = params["INPUT_WORDS_CNT"] - params["INPUT_WORDS_CNT_RIGHT"]
