@@ -1,7 +1,28 @@
- sudo apt install --no-install-recommends nvidia-driver-510 nvidia-dkms-510 python3-pip htop python3-dev g++
+#  sudo apt install --no-install-recommends nvidia-driver-510 nvidia-dkms-510 
+ 
+sudo apt install --no-install-recommends nvidia-driver-525 nvidia-dkms-525
+sudo apt install --no-install-recommends g++ jq htop
+
+curl micro.mamba.pm/install.sh | bash
+micromamba create -f ./env.yaml
+
+micromamba install -f ./env.yaml
+
+#python3-pip htop python3-dev 
+
+
 sudo apt-get install --no-install-recommends nvidia-cuda-toolkit
 
- pip3 install torchdata torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+#  pip3 install torchdata torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+
+
+mamba install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
+
+
+dask-scheduler
+docker run -d --restart always --network host cr.yandex/crp2897qtopgu6vmmabs/worker:latest
+
+
  pip3 install librosa optuna disklist dask dask-kubernetes
  pip3 install onnxruntime onnx nerus mosestokenizer shap corus navec razdel  slovnet jupyterlab numpy scipy pandas python-dotenv pydot tqdm ipywidgets==7.7.2 matplotlib
 

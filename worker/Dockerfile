@@ -39,4 +39,4 @@ RUN /opt/conda/bin/pip --no-cache-dir install \
 COPY prepare.sh /usr/bin/prepare.sh
 
 #ENTRYPOINT ["tini", "-g", "--", "/usr/bin/prepare.sh"]
-ENTRYPOINT [ "dask-worker", "tcp://51.250.1.213:8786" ]
+ENTRYPOINT [ "dask-worker", "tcp://51.250.1.213:8786", "--nthreads", "1" ]
