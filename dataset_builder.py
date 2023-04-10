@@ -8,11 +8,11 @@ from navec import Navec
 import itertools
 from razdel import tokenize, sentenize
 from mosestokenizer import MosesTokenizer, MosesSentenceSplitter, MosesPunctuationNormalizer
+from navec import Navec
+
 punctuation_normalizer = MosesPunctuationNormalizer('ru')
 
 morph = pymorphy2.MorphAnalyzer()
-
-from navec import Navec
 navec_path = download_file('hudlit_12B_500K_300d_100q.tar',
         "https://storage.yandexcloud.net/natasha-navec/packs/navec_hudlit_v1_12B_500K_300d_100q.tar")
 navec = Navec.load(navec_path)
