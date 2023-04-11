@@ -1,17 +1,25 @@
 #  sudo apt install --no-install-recommends nvidia-driver-510 nvidia-dkms-510 
  
 sudo apt install --no-install-recommends nvidia-driver-525 nvidia-dkms-525
-sudo apt install --no-install-recommends g++ jq htop
+sudo apt install --no-install-recommends jq htop libc-dev g++
 
 curl micro.mamba.pm/install.sh | bash
 micromamba create -f ./env.yaml
 
-micromamba install -f ./env.yaml
+# micromamba install -f ./env.yaml
+mamba env update --file env.yaml
+
 
 #python3-pip htop python3-dev 
 
 
-sudo apt-get install --no-install-recommends nvidia-cuda-toolkit
+find ./ -name "cuda.h"
+sudo mkdir  /usr/local/cuda
+sudo mkdir  /usr/local/cuda/include
+ sudo cp ./envs/pytorch-env/envs/pytorch-env/lib/python3.10/site-packages/triton/third_party/cuda/include/cuda.h /usr/local/cuda/include
+# sudo apt-get install nvidia-cuda-dev
+
+sudo apt-get install --no-install-recommends nvidia-cuda-toolkit g++
 
 #  pip3 install torchdata torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 

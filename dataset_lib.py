@@ -6,6 +6,7 @@ from utils import download_file
 from corus import load_lenta2
 import torch
 from utils import ProgressParallel, chunks, size_of_tensor, count_parameters
+# from disklist import DiskList
 
 importlib.reload(dataset_builder)
 # input, output = create_dataset([
@@ -97,7 +98,6 @@ def create_dataset(cnt, parts, params):
 # input.shape, output.shape, len(dataset['texts_res']), dataset['is_infected'].shape, dataset['is_infected'].sum()
 
 
-from disklist import DiskList
 class Dataset:
     def __init__(self, params, train_test_split, chunk_size, batch_size):
         self.params = params
@@ -111,7 +111,7 @@ class Dataset:
         self.x_test = torch.FloatTensor()
         self.y_test = torch.FloatTensor()
 
-        self.texts_res = DiskList(cache_size=1, tmp_dir="./cache/")
+        # self.texts_res = DiskList(cache_size=1, tmp_dir="./cache/")
         self.is_infected = list()
 
         self.train_indices = torch.LongTensor()
@@ -140,7 +140,7 @@ class Dataset:
             y_train, y_test = y[train_indices], y[test_indices]
 
             current_length = len(self.train_indices) + len(self.test_indices)
-            self.texts_res.extend(text_res)
+            # self.texts_res.extend(text_res)
             self.is_infected.extend(is_infected)
             self.train_indices = torch.cat((self.train_indices, train_indices + current_length))
             self.test_indices = torch.cat((self.test_indices, test_indices + current_length))

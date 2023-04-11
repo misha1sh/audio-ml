@@ -1,6 +1,6 @@
 import torch
 import random
-import pymorphy2
+import pymorphy3
 from params import NO_PUNCT
 from joblib import delayed
 from utils import ProgressParallel, download_file
@@ -12,7 +12,7 @@ from navec import Navec
 
 punctuation_normalizer = MosesPunctuationNormalizer('ru')
 
-morph = pymorphy2.MorphAnalyzer()
+morph = pymorphy3.MorphAnalyzer()
 navec_path = download_file('hudlit_12B_500K_300d_100q.tar',
         "https://storage.yandexcloud.net/natasha-navec/packs/navec_hudlit_v1_12B_500K_300d_100q.tar")
 navec = Navec.load(navec_path)
