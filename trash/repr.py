@@ -36,7 +36,7 @@ import random
 import string
 
 from pymorphy3.tagset import OpencorporaTag
-from params import NO_PUNCT, build_params
+from lib.params import NO_PUNCT, build_params
 morph = pymorphy3.MorphAnalyzer()
 
 # https://pymorphy2.readthedocs.io/en/stable/user/grammemes.html

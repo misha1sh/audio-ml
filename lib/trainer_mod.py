@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-import matplotlib.pyplot as plt
 
 import optuna
 import math
@@ -193,6 +192,7 @@ class Trainer:
                     raise optuna.TrialPruned()
 
     def plot_history(self, cutoff=100):
+        import matplotlib.pyplot as plt
         plt.style.use('fivethirtyeight')
         plt.xlabel('Iterations')
         plt.ylabel('Loss')

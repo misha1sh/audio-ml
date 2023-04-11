@@ -1,7 +1,13 @@
 cache
-__pycache__
+*__pycache__*
 nohup.out
 annot.opcorpora.xml
 dataset.zip
 graph.dot*
 *russian3*
+*lib.zip
+lib/build*
+lib/cache/*
+lib/dist*
+lib/lib.egg-info*
+.cache

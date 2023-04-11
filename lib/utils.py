@@ -4,13 +4,16 @@ import time
 from tqdm.notebook import tqdm
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 # import librosa
 import os
 import urllib
 import zipfile
 
 root = "./cache"
+if not os.path.exists(root):
+    os.makedirs(root)
+
 class ProgressParallel(Parallel):
     def __init__(self, use_tqdm=True, total=None, *args, **kwargs):
         self._use_tqdm = use_tqdm
@@ -26,7 +29,6 @@ class ProgressParallel(Parallel):
             self._pbar.total = self.n_dispatched_tasks
         self._pbar.n = self.n_completed_tasks
         self._pbar.refresh()
-
 
 
 def download_file(file, url):

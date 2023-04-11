@@ -3,6 +3,7 @@ import random
 import pymorphy3
 from params import NO_PUNCT
 from joblib import delayed
+import joblib
 from utils import ProgressParallel, download_file
 from navec import Navec
 import itertools
@@ -222,14 +223,24 @@ def create_dataset_for_text(text, params):
     if len(sampled_input) == 0: return None
     return torch.stack(sampled_input), torch.stack(sampled_output), texts, torch.BoolTensor(is_infected)
 
-def create_dataset(texts, params):
+def create_dataset(texts, params, progress=True):
     tasks = []
     for text in texts:
         tasks.append(delayed(create_dataset_for_text)(text, params))
+
     if len(tasks) > 10:
-        completed_tasks = ProgressParallel(n_jobs=16, total=len(tasks))(tasks)
+        n_jobs = joblib.cpu_count()
     else:
-        completed_tasks = [task[0](*task[1], **task[2]) for task in tasks]
+        n_jobs = 1
+
+    print("here", progress)
+    if progress:
+        Parallel_ = ProgressParallel(n_jobs=n_jobs, total=len(tasks))
+    else:
+        Parallel_ = joblib.Parallel(n_jobs=n_jobs)
+
+    completed_tasks = Parallel_(tasks)
+        #[task[0](*task[1], **task[2]) for task in tasks]
     # for i, o in completed_tasks:
         # print(i.shape, o.shape)
     input, output, texts_res, is_infected = zip(*filter(lambda res: res is not None, completed_tasks))

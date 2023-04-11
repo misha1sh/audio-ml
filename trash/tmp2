@@ -1,3 +1,37 @@
+import zipfile
+
+def pack_lib():
+    dir_to_zip = "../lib"
+    zip_file_name = "../lib.zip"
+    if os.path.exists(zip_file_name):
+        os.remove(zip_file_name)
+    exclude_dirs = ["cache"]
+    with zipfile.ZipFile(zip_file_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(dir_to_zip):
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+            for file in files:
+                zipf.write(os.path.join(root, file), arcname="lib/" + os.path.relpath(os.path.join(root, file), dir_to_zip))
+    return zip_file_name
+pack_lib()
+
+
+# def check_and_upload_file(client, local_filepath, filename):
+#     # Function to check if the file exists on the worker and upload it if necessary
+#     def _check_file_exists(filename):
+#         return os.path.exists(filename)
+
+#     # Check if the file exists on each worker
+#     file_exists = client.run(_check_file_exists, filename)
+#     print(file_exists)
+#     # If the file doesn't exist on any worker, upload it
+#     if not all(file_exists.values()):
+#         client.upload_file(local_filepath)
+#         print(f"Uploaded {filename} to all workers.")
+#     else:
+#         print(f"{filename} already exists on all workers.")
+
+# check_and_upload_file(client, "./cache/lenta-ru-news.csv.gz", "lenta-ru-news.csv.gz")
+
 # nn.Tanhshrink(),
 # nn.Sigmoid(),
 # nn.ReLU(),

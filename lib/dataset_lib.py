@@ -14,12 +14,14 @@ importlib.reload(dataset_builder)
 #     'В лесу родилась елочка, в лесу она росла.'])
 # input.shape, output.shape
 
-lenta_path = download_file("lenta-ru-news.csv.gz",
+def lenta_path():
+    return download_file("lenta-ru-news.csv.gz",
     "https://github.com/yutkin/Lenta.Ru-News-Dataset/releases/download/v1.1/lenta-ru-news.csv.bz2")
-nerus_file = download_file("nerus_lenta.conllu.gz", "https://storage.yandexcloud.net/natasha-nerus/data/nerus_lenta.conllu.gz")
+def nerus_file():
+    return download_file("nerus_lenta.conllu.gz", "https://storage.yandexcloud.net/natasha-nerus/data/nerus_lenta.conllu.gz")
 
 def get_lenta_records():
-    return load_lenta2(lenta_path)
+    return load_lenta2(lenta_path())
 
 def read_lenta_records(records, cnt):
     res = []
