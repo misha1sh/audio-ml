@@ -1,4 +1,4 @@
-# docker pull cr.yandex/crp2897qtopgu6vmmabs/worker:latest && docker run --network host --env SCHEDULER=cloudgpu3.ru-central1.internal:8786 --env MEMORY_LIMIT=93Gi -it  cr.yandex/crp2897qtopgu6vmmabs/worker:latest
+# docker pull cr.yandex/crp2897qtopgu6vmmabs/worker:latest && docker run --network host --env DASK_DISTRIBUTED__WORKER__DAEMON=False --env SCHEDULER=cloudgpu3.ru-central1.internal:8786 --env MEMORY_LIMIT=93Gi -it  cr.yandex/crp2897qtopgu6vmmabs/worker:latest
 
 FROM mambaorg/micromamba:latest
 

@@ -233,7 +233,6 @@ def create_dataset(texts, params, progress=True):
     else:
         n_jobs = 1
 
-    print("here", progress)
     if progress:
         Parallel_ = ProgressParallel(n_jobs=n_jobs, total=len(tasks))
     else:
