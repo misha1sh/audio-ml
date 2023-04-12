@@ -37,11 +37,11 @@ class Storage:
     def get_chunks_count(self, name):
         return self.chunks_count[name]
 
-    def start_loading_async(self, name, chunk_id):
+    def start_loading_async(self, name, chunk_id, *args, **kwargs):
         if chunk_id >= self.chunks_count[name]: return
         loop = asyncio.get_running_loop()
         def task():
-            return self._read_file(name, chunk_id)
+            return self._read_file(name, chunk_id, *args, **kwargs)
         self.future = {
             "name": name,
             "chunk_id": int(chunk_id),
@@ -62,17 +62,17 @@ class Storage:
         else:
             raise ValueError(f"Unsupported file format: {filepath}")
 
-    def _read_file(self, name, chunk_id):
+    def _read_file(self, name, chunk_id, *args, **kwargs):
         filepath, method = self._find_file(name, chunk_id)
         with open(filepath, "rb") as file:
-            return method(file)
+            return method(file, *args, **kwargs)
 
-    async def get(self, name, chunk_id):
-        if self.future and self.future["name"] == name and self.future["chunk_id"] == int(chunk_id):
-            res = await self.future["future"]
-            self.future  = None
-            return res
-        return self._read_file(name, chunk_id)
+    def get(self, name, chunk_id, *args, **kwargs):
+        # if self.future and self.future["name"] == name and self.future["chunk_id"] == int(chunk_id):
+        #     res = await self.future["future"]
+        #     self.future  = None
+        #     return res
+        return self._read_file(name, chunk_id, *args, *kwargs)
 
 # storage = Storage("cache/storage")
 # storage.clear()

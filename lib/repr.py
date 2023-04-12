@@ -32,11 +32,12 @@ from slovnet.model.emb import NavecEmbedding
 
 # from torchmetrics.functional.classification import binary_accuracy
 
+
 import random
 import string
-
+import importlib
 from pymorphy3.tagset import OpencorporaTag
-from lib.params import NO_PUNCT, build_params
+from params import NO_PUNCT, build_params
 morph = pymorphy3.MorphAnalyzer()
 
 # https://pymorphy2.readthedocs.io/en/stable/user/grammemes.html
@@ -86,8 +87,16 @@ params = build_params({
     'INFECTED_TEXT_PROB': 0.1,
     "RETAIN_LEFT_PUNCT": True,
 })
-# client = Client("tcp://0.0.0.0:8786")
-# torch.cuda.is_available(), torch.rand(10).to('cuda:0'), client
+client = await Client("tcp://0.0.0.0:8786", asynchronous=True)
+async def load():
+    !python setup.py bdist_egg > /dev/null
+    await client.upload_file(glob.glob('dist/*.egg')[0])
+await load()
+
+torch.cuda.is_available(), torch.rand(10).to('cuda:0'), client
+
+
+
 
 
 import dataset_lib
@@ -98,8 +107,9 @@ importlib.reload(dataset_lib)
 params['type'] = 'lenta'
 dataset = dataset_lib.Dataset(params, train_test_split=0.9, chunk_size=300000, batch_size=2000)
 # dataset.load(50000, 10000) # 50000
-dataset.load(1, 10000) # 50000
+dataset.load(50, 10000) # 50000
 dataset.to_gpu()
+
 
 from xformers.factory import xFormerEncoderBlock, xFormerEncoderConfig
 N_words = params["INPUT_WORDS_CNT"]
@@ -132,6 +142,8 @@ encoder_config = {
         "hidden_layer_multiplier": 1,
     },
 }
+
+
 
 class Model(nn.Module):
     def __init__(self, **kwargs):
@@ -176,8 +188,6 @@ class Model(nn.Module):
     #     buffer_size += buffer.nelement() * buffer.element_size()
     # return (param_size + buffer_size) / 1024**2
 
-with torch.no_grad():
-    print(Model()(dataset.x_test))
 
 # asdfadsfasfd
 

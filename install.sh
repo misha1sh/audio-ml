@@ -12,7 +12,7 @@ mamba env update --file env.yaml
 
 #python3-pip htop python3-dev 
 
-
+# pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
 sudo apt-get install gnupg
 curl -fsSL https://pgp.mongodb.com/server-6.0.asc | \
    sudo gpg -o /usr/share/keyrings/mongodb-server-6.0.gpg \
