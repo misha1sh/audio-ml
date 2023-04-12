@@ -1,7 +1,7 @@
 #  sudo apt install --no-install-recommends nvidia-driver-510 nvidia-dkms-510 
  
 sudo apt install --no-install-recommends nvidia-driver-525 nvidia-dkms-525
-sudo apt install --no-install-recommends jq htop libc-dev g++
+sudo apt install --no-install-recommends jq htop libc-dev g++ graphviz
 
 curl micro.mamba.pm/install.sh | bash
 micromamba create -f ./env.yaml
