@@ -1,4 +1,4 @@
-# docker pull cr.yandex/crp2897qtopgu6vmmabs/worker:latest && docker run --network host --env DASK_DISTRIBUTED__WORKER__DAEMON=False --env SCHEDULER=cloudgpu3.ru-central1.internal:8786 --env MEMORY_LIMIT=93Gi -it  cr.yandex/crp2897qtopgu6vmmabs/worker:latest
+# docker pull cr.yandex/crp2897qtopgu6vmmabs/worker:latest && docker run --network host -it  cr.yandex/crp2897qtopgu6vmmabs/worker:latest
 
 FROM mambaorg/micromamba:latest
 
@@ -15,10 +15,17 @@ RUN micromamba create -f ./env.yaml \
     && find /opt/conda/ -type f,l -name '*.js.map' -delete \
     && rm -rf /opt/conda/pkgs
 
-ENV SCHEDULER=0.0.0.0
-ENV MEMORY_LIMIT=8Gi
-ENV NTHREADS=1
-ENV NPROCS=1
+COPY torch_remote.py .
+
+COPY ./run_torch_worker.sh .
+ENV INIT_METHOD='tcp://51.250.75.187:2345'
+ENTRYPOINT ["/bin/bash", "./run_torch_worker.sh"]
+
+
+# ENV SCHEDULER=0.0.0.0
+# ENV MEMORY_LIMIT=8Gi
+# ENV NTHREADS=1
+# ENV NPROCS=1
 
 # RUN mamba activate pyotr
 # RUN eval "$(micromamba shell hook --shell=bash)" && micromamba activate pytorch-env
@@ -59,8 +66,8 @@ ENV NPROCS=1
 
 # COPY prepare.sh /usr/bin/prepare.sh
 
-COPY ./run_dask_worker.sh .
-ENTRYPOINT ["/bin/bash", "./run_dask_worker.sh"]
+# COPY ./run_dask_worker.sh .
+# ENTRYPOINT ["/bin/bash", "./run_dask_worker.sh"]
 
 #ENTRYPOINT ["tini", "-g", "--", "/usr/bin/prepare.sh"]
 # ENTRYPOINT [ "dask-worker", "tcp://$SCHEDULER", "--nthreads", "1", "--memory-limit", "$MEMORY_LIMIT" ]
