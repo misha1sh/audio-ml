@@ -10,6 +10,7 @@ import warnings
 import concurrent
 import queue
 import importlib
+import subprocess
 
 import dill
 import numpy as np

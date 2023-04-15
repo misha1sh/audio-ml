@@ -152,3 +152,46 @@ def get_sendable_globals(globs):
         if not is_sendable(v): continue
         res[k] = v
     return res
+
+server = None
+def run_server_if_not_running():
+    global server
+    try:
+        def func(): return 1
+        assert server.rpc_simple(func) == 1
+        print("server already running")
+        return server
+    except:
+        server = RemoteRunnerServer()
+        server.run()
+        return server
+
+
+import os
+import glob
+def server_install_packages(server):
+    os.system('python -W ignore setup.py -q bdist_egg &> /dev/null')
+    with open(glob.glob('dist/*.egg')[0], "rb") as f:
+        package_data = f.read()
+
+    #def package_install(package_data):
+    package_install = f"""
+global egg_file
+import tempfile
+import pkgutil
+import importlib
+import sys
+egg_file = tempfile.NamedTemporaryFile(suffix=".egg")
+egg_file.write(package_data)
+egg_file.flush()
+if egg_file.name not in sys.path:
+    sys.path.insert(0, egg_file.name)
+for i in list(pkgutil.iter_modules([egg_file.name])):
+    importlib.reload(importlib.import_module(i.name))
+    print("loaded ", i.name)
+    """
+
+    server.rpc_simple(exec, package_install, {"package_data": package_data})
+    server.rpc_simple(exec, "from imports import *")
+    # server.rpc_simple(exec, "import importlib\nimport dataset_builder\nimportlib.reload(dataset_builder)")
+
