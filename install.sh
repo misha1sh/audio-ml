@@ -25,7 +25,8 @@ sudo systemctl start mongod
 mongosh
 
 
-pip install tabnine-jupyterlab "jedi<0.18" 
+# pip install tabnine-jupyterlab 
+pip install "jedi<0.18" jupyterlab-lsp 'python-lsp-server[all]'
 
 find ./ -name "cuda.h"
 sudo mkdir  /usr/local/cuda

@@ -1,7 +1,6 @@
 import torch.distributed.rpc as rpc
 import dill
 import os
-import time
 
 def _run_remote(data):
     func, args, kwargs = dill.loads(data)
@@ -16,6 +15,5 @@ def add_numbers(a, b):
     return a + b
 
 if __name__ == '__main__':
-    print("starting rpc")
-    Dprint("rpc connected")
-    time.sleep(1e9)
+    init_method = os.getenv('INIT_METHOD', 'tcp://51.250.75.187:2345')
+    rpc.init_rpc("worker", rpc.BackendType.TENSORPIPE, rank=1, world_size=2, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(init_method=init_method, num_worker_threads=1))
