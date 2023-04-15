@@ -6,24 +6,24 @@ import queue
 import threading
 import select
 
-class FileAsyncResult:
-    def __init__(self, filepath):
-        self.event = threading.Event()
-        self.filepath = filepath
-        self.exception = None
+# class FileAsyncResult:
+#     def __init__(self, filepath):
+#         self.event = threading.Event()
+#         self.filepath = filepath
+#         self.exception = None
         
-    def set_exception(self, exception):
-        self.exception = exception
-        self.event.set()
+#     def set_exception(self, exception):
+#         self.exception = exception
+#         self.event.set()
 
-    def set_result(self, sockfile):
-        with open(self.filepath) as file:
-            size = dill.load(sockfile)
-            while size > 0:
-                cnt_read = min(size, 10 * 1024 * 1024)
-                file.write(sockfile.read(cnt_read))
-                size -= cnt_read
-        self.event.set()
+#     def set_result(self, sockfile):
+#         with open(self.filepath) as file:
+#             size = dill.load(sockfile)
+#             while size > 0:
+#                 cnt_read = min(size, 10 * 1024 * 1024)
+#                 file.write(sockfile.read(cnt_read))
+#                 size -= cnt_read
+#         self.event.set()
 
 class BasicAsyncResult:
     def __init__(self):
@@ -104,15 +104,15 @@ class RemoteRunnerServer:
             raise result.exception
         return result.result
         
-    def rpc_file(self, file, func, *args, **kwargs):
-        assert callable(func)
-        assert isinstance(file, str)
-        result = FileAsyncResult(file)
-        self.requests_queue.put((result, b'1', ((func, args, kwargs, 1))))
-        result.event.wait()
-        if result.exception:
-            raise result.exception
-        return True
+    # def rpc_file(self, file, func, *args, **kwargs):
+    #     assert callable(func)
+    #     assert isinstance(file, str)
+    #     result = FileAsyncResult(file)
+    #     self.requests_queue.put((result, b'1', ((func, args, kwargs, 1))))
+    #     result.event.wait()
+    #     if result.exception:
+    #         raise result.exception
+    #     return True
     
     def host_server(self):
         HOST = '0.0.0.0' 

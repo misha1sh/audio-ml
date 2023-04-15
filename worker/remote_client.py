@@ -51,7 +51,9 @@ def run():
 
                             f.write(b'0')
                             if res_typ == 0:
-                                torch.save(res, f)
+                                for i in res:
+                                    dill.dump(i, f)
+                                # torch.save(res, f)
                             elif res_typ == 1:
                                 dill.dump(res, f)
                             else:

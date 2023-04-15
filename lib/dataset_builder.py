@@ -18,9 +18,12 @@ navec_path = download_file('hudlit_12B_500K_300d_100q.tar',
         "https://storage.yandexcloud.net/natasha-navec/packs/navec_hudlit_v1_12B_500K_300d_100q.tar")
 navec = Navec.load(navec_path)
 
+
+TORCH_DTYPE = torch.float16
+
 NAVEC_UNK = navec['<unk>']
-NAVEC_UNK_TORCH = torch.from_numpy(NAVEC_UNK)
-NAVEC_PAD_TORCH = torch.from_numpy(navec['<pad>'])
+NAVEC_UNK_TORCH = torch.from_numpy(NAVEC_UNK).to(TORCH_DTYPE)
+NAVEC_PAD_TORCH = torch.from_numpy(navec['<pad>']).to(TORCH_DTYPE)
 
 UNDEF_TOKEN = "UNDEF"
 PAD_TOKEN = "PAD"
@@ -28,7 +31,7 @@ PAD_TOKEN = "PAD"
 
 def empty_word_features(params):
     return torch.zeros([params["TOTAL_WORD_FEATURES_CNT"]],
-                        dtype=torch.float32)
+                        dtype=TORCH_DTYPE)
 
 def get_navec_start_idx(params):
     return params['VARIANT_FEATURES_CNT'] * params['VARIANTS_CNT']
@@ -247,5 +250,5 @@ def create_dataset(texts, params, progress=True):
     input_tensor, output_tensor = torch.cat(input), torch.cat(output)
     is_infected = torch.cat(is_infected)
     texts_res = [item for sublist in texts_res for item in sublist]
-    output_tensor = torch.nn.functional.one_hot(output_tensor, params["TARGET_CLASSES_COUNT"])
-    return input_tensor, output_tensor.float(), texts_res, is_infected
+    output_tensor = torch.nn.functional.one_hot(output_tensor, params["TARGET_CLASSES_COUNT"]).to(torch.int32)
+    return input_tensor, output_tensor, texts_res, is_infected
