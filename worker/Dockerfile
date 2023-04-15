@@ -17,9 +17,9 @@ RUN micromamba create -f ./env.yaml \
 
 COPY torch_remote.py .
 
-COPY ./run_torch_worker.sh .
-ENV INIT_METHOD='tcp://51.250.75.187:2345'
-ENTRYPOINT ["/bin/bash", "./run_torch_worker.sh"]
+# COPY ./run_torch_worker.sh .
+# ENV INIT_METHOD='tcp://51.250.75.187:2345'
+# ENTRYPOINT ["/bin/bash", "./run_torch_worker.sh"]
 
 
 # ENV SCHEDULER=0.0.0.0

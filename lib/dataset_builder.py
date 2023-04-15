@@ -224,6 +224,7 @@ def create_dataset_for_text(text, params):
     return torch.stack(sampled_input), torch.stack(sampled_output), texts, torch.BoolTensor(is_infected)
 
 def create_dataset(texts, params, progress=True):
+    assert 'type' in params
     tasks = []
     for text in texts:
         tasks.append(delayed(create_dataset_for_text)(text, params))
