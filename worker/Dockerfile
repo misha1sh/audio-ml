@@ -15,8 +15,11 @@ RUN micromamba create -f ./env.yaml \
     && find /opt/conda/ -type f,l -name '*.js.map' -delete \
     && rm -rf /opt/conda/pkgs
 
-COPY torch_remote.py .
-
+ENV HOST='51.250.75.187'
+ENV PORT='65231'
+COPY remote_client.py .
+COPY run_remote_client.sh .
+ENTRYPOINT ["/bin/bash", "./run_remote_client.sh"]
 # COPY ./run_torch_worker.sh .
 # ENV INIT_METHOD='tcp://51.250.75.187:2345'
 # ENTRYPOINT ["/bin/bash", "./run_torch_worker.sh"]

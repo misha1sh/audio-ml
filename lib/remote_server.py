@@ -30,14 +30,40 @@ class BasicAsyncResult:
         self.event = threading.Event()
         self.result = None
         self.exception = None
-        
-    def set_exception(self, exception):
-        self.exception = exception
+        self.callback = None
+        self.completed = False
+
+    def _complete(self):
         self.event.set()
+        if self.callback is not None:
+            self.callback(self)
+        self.completed = True
+
+    def set_exception(self, exception):
+        assert not self.completed
+        self.exception = exception
+        self._complete()
         
     def set_result(self, sockfile):
+        assert not self.completed
         self.result = dill.load(sockfile)
-        self.event.set()
+        self._complete()
+        
+    def get_result(self):
+        if self.exception is not None:
+            raise self.exception
+        return self.result
+
+    def set_callback(self, callback):
+        assert callable(callback)
+        self.callback = callback
+
+    def __repr__(self) -> str:
+        if not self.completed:
+            return f"BasicAsyncResult not completed"
+        if self.exception is not None:
+            return f"BasicAsyncResult completed with exception `{self.exception}`"
+        return f"BasicAsyncResult completed with result `{self.result.__repr__()[:20]}...`"
         
 class RemoteRunnerServer:
     def __init__(self):
@@ -93,6 +119,13 @@ class RemoteRunnerServer:
         self.requests_queue.put((result, b'0', globls))
         result.event.wait()
         return result.result     
+    
+    def rpc_async(self, func, *args, **kwargs):
+        assert callable(func)
+                                
+        result = BasicAsyncResult()
+        self.requests_queue.put((result, b'1', ((func, args, kwargs, 1))))
+        return result
     
     def rpc_simple(self, func, *args, **kwargs):
         assert callable(func)
@@ -170,7 +203,7 @@ def run_server_if_not_running():
 import os
 import glob
 def server_install_packages(server):
-    os.system('python -W ignore setup.py -q bdist_egg &> /dev/null')
+    os.system('python -W ignore setup.py -q bdist_egg >/dev/null 2>&1')
     with open(glob.glob('dist/*.egg')[0], "rb") as f:
         package_data = f.read()
 
