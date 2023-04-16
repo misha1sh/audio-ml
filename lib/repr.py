@@ -1,114 +1,24 @@
-import torch
-import torch.nn as nn
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch import Tensor
-import functools
-import os
-import numpy as np
-
-import warnings
-import glob
-
-
-import io
-from joblib import delayed 
-
-from cacher import root, file_cached, mem_cached, clear_cache
-
-import pymorphy3
-
-from corus import load_lenta2
-from navec import Navec
-from razdel import tokenize, sentenize
-from nerus import load_nerus
-
-from utils import ProgressParallel, chunks, size_of_tensor, count_parameters
-from joblib import delayed
-
-from utils import download_file
-from dask.distributed import Client
-
-from slovnet.model.emb import NavecEmbedding
-
-# from torchmetrics.functional.classification import binary_accuracy
-
-
-import random
-import string
+import imports
 import importlib
-from pymorphy3.tagset import OpencorporaTag
-from params import NO_PUNCT, build_params
-morph = pymorphy3.MorphAnalyzer()
+importlib.reload(imports)
+from imports import *
 
-# https://pymorphy2.readthedocs.io/en/stable/user/grammemes.html
-# http://opencorpora.org/dict.php?act=gram
-# https://github.com/pymorphy2/pymorphy2/blob/92d546f042ff14601376d3646242908d5ab786c1/pymorphy2/tagset.py#L130
-feature_tags_array = [
-    OpencorporaTag.PARTS_OF_SPEECH, # часть речи
-    OpencorporaTag.GENDERS, # род
-    OpencorporaTag.NUMBERS, # число
-    OpencorporaTag.CASES, # падеж
-    OpencorporaTag.ASPECTS, # соверш / несоверш
-    OpencorporaTag.TRANSITIVITY, # перех / непереходный
-    OpencorporaTag.PERSONS, # лицо
-    OpencorporaTag.TENSES, # время
-    OpencorporaTag.MOODS, # наклонение
-    OpencorporaTag.VOICES, # залог
-    #INVOLVEMENT
-    ['Prnt'], # вводные слова
-    ['Apro'], # местоимение
-    ['NUMB'], # число вида 1234
-    ['LATIN'], # текст на английском
-    ['UNKN'], # неизвестный токен
-    ['PUNCT_DASH', 'PUNCT_DOT', 'PUNCT_COMMA', 'PUNCT_QUOTE',
-     'PUNCT_LEFT_PARENTHESIS', 'PUNCT_RIGHT_PARENTHESIS' ], # "()
-    ['CAPITALIZED'], # начинается с заглавной буквы
-    ['Fixd', 'Abbr'] # неизменяемое, сокращение
-]
-
-CUT_NAVEC_TAGS_ARRAY = [
-    #'NOUN', #'ADJF'
-]
-
-params = build_params({
-    "VARIANTS_CNT": 1,
-    "TARGET_CLASSES_COUNT": 3,
-    "INPUT_WORDS_CNT": 16,
-    "feature_tags_array": feature_tags_array,
-    "PUNCTUATION_TARGET": {
-        "$empty": NO_PUNCT,
-        ",": 1,
-        ".": 2,
-        "!": 2,
-        "?": 2,
-    },
-    "USE_NAVEC": True,
-    'CUT_NAVEC_TAGS_SET': set(CUT_NAVEC_TAGS_ARRAY),
-    'INFECTED_TEXT_PROB': 0.1,
-    "RETAIN_LEFT_PUNCT": True,
-})
-client = await Client("tcp://0.0.0.0:8786", asynchronous=True)
-async def load():
-    !python setup.py bdist_egg > /dev/null
-    await client.upload_file(glob.glob('dist/*.egg')[0])
-await load()
-
-torch.cuda.is_available(), torch.rand(10).to('cuda:0'), client
+torch.cuda.is_available(), torch.rand(1).to('cuda:0')
 
 
 
 
 
-import dataset_lib
-import importlib
-importlib.reload(dataset_lib)
+
+from async_dataset_reader2 import AsyncDatasetReader, AsyncDatasetLoaderToGPU
+dataset_mem_reader = AsyncDatasetReader(path="cache2/storage", max_kept_in_memory=5)
+dataset_to_gpu_loader = AsyncDatasetLoaderToGPU(dataset_mem_reader, max_kept_in_memory=2, 
+                                                test_samples_count=20000)
+
+dataset_to_gpu_loader.first_loaded_event.wait()
+params = dataset_mem_reader.params
 
 
-params['type'] = 'lenta'
-dataset = dataset_lib.Dataset(params, train_test_split=0.9, chunk_size=300000, batch_size=2000)
-# dataset.load(50000, 10000) # 50000
-dataset.load(50, 10000) # 50000
-dataset.to_gpu()
 
 
 from xformers.factory import xFormerEncoderBlock, xFormerEncoderConfig
@@ -142,6 +52,7 @@ encoder_config = {
         "hidden_layer_multiplier": 1,
     },
 }
+
 
 
 
@@ -189,8 +100,6 @@ class Model(nn.Module):
     # return (param_size + buffer_size) / 1024**2
 
 
-# asdfadsfasfd
-
 aa = {}
 def train_model():
     model = Model()
@@ -218,7 +127,7 @@ def train_model():
                         # },
                     })
 
-    trainer.set_data(dataset)
+    trainer.set_data(dataset_to_gpu_loader)
     try:
         trainer.train(400, trial=None, log=True) # , chunk_size=680000,
     except KeyboardInterrupt:

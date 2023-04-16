@@ -7,6 +7,8 @@ graph.dot*
 *lib.zip
 lib/build*
 */cache/*
+lib/cache2/*
+lib/runs/*
 cache/*
 lib/dist*
 lib/lib.egg-info*

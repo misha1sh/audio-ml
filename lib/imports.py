@@ -16,6 +16,7 @@ import traceback
 from collections import defaultdict
 import time
 from dataclasses import dataclass
+import shutil
 
 import dill
 import numpy as np
@@ -42,3 +43,4 @@ import dataset_builder
 from stream import Stream
 from storage import Storage
 from remote_server import RemoteRunnerServer, run_server_if_not_running, server_install_packages
+from async_dataset_reader import AsyncDatasetReader

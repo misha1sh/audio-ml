@@ -1,0 +1,17 @@
+# for i in range(10):
+#     for x, y in dataset_reader.iter_train_batches():
+#         # print(x.shape)
+#     time.sleep(0.2)
+
+
+
+# import dataset_lib
+# import importlib
+# importlib.reload(dataset_lib)
+
+
+# params['type'] = 'lenta'
+# dataset = dataset_lib.Dataset(params, train_test_split=0.9, chunk_size=300000, batch_size=2000)
+# # dataset.load(50000, 10000) # 50000
+# dataset.load(50, 10000) # 50000
+# dataset.to_gpu()

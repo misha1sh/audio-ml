@@ -155,9 +155,8 @@ class Trainer:
 
             self.model.eval()
             with torch.no_grad():
-                test_loss = 1
-                # test_loss = self.calc_loss_on_data_internal(self.dataset.x_test.to(self.device),
-                #                                             self.dataset.y_test).item()
+                test_loss = self.calc_loss_on_data_internal(self.dataset.x_test.to(self.device),
+                                                            self.dataset.y_test).item()
 
             self.history['train_loss'].append(train_loss)
             self.history['test_loss'].append(test_loss)
