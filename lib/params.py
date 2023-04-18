@@ -12,6 +12,16 @@ def build_params(params):
 
     params["ID_TO_PUNCTUATION"] = reverse_dict(params["PUNCTUATION_TARGET"],
                                             priority_for_duplicates=['.'])
+    
+
+    params['INFECT_TYPE_TO_ID'] = {'nothing': 0}
+    params['ID_TO_INFECT_TYPE'] = {0: 'nothing'}
+    for id, infect_type in enumerate(params['INFECT_TYPE_PROBS']):
+        params['INFECT_TYPE_TO_ID'][infect_type] = (id + 1)
+        params['ID_TO_INFECT_TYPE'][id + 1] = infect_type
+
+    
+
     params["VARIANT_FEATURES_CNT"] = sum([
                 len(params["feature_tags_dict"]), # noun, case, number, ...
                 1 # variant score

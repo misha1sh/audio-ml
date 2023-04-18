@@ -11,13 +11,13 @@ class DatasetChunk:
     y: torch.Tensor
     in_memory: bool
     last_read: int
-    used: bool
+    used: int
 
     def __repr__(self):
         return f"DatasetChunk {self.i} in_memory={self.in_memory} last_read={self.last_read} used={self.used}"
 
 class AsyncDatasetLoaderToGPU:
-    def __init__(self, async_dataset_reader, max_kept_in_memory, test_samples_count):
+    def __init__(self, async_dataset_reader, max_kept_in_memory, test_samples_count, writer):
         global async_dataset_to_gpu_loader_thread
 
         assert max_kept_in_memory > 1
@@ -36,8 +36,12 @@ class AsyncDatasetLoaderToGPU:
 
         self.x_test, self.y_test = None, None
 
+        self.writer = writer
+
         async_dataset_to_gpu_loader_thread = threading.Thread(target=self.read_infinitely)
         async_dataset_to_gpu_loader_thread.start()
+
+
 
     def wait_for_first_chunk(self):
         self.async_dataset_reader.first_loaded_event.wait()
@@ -52,7 +56,7 @@ class AsyncDatasetLoaderToGPU:
         return sum(map(lambda chunk: chunk.in_memory, self.chunks))
 
     def has_used(self):
-        return any(map(lambda chunk: chunk.used and chunk.in_memory, self.chunks))
+        return any(map(lambda chunk: chunk.used > 0 and chunk.in_memory, self.chunks))
 
     def read_next(self):
         self.chunks_count = self.async_dataset_reader.chunks_count
@@ -63,20 +67,20 @@ class AsyncDatasetLoaderToGPU:
             return
         
         if self.count_in_memory() >= self.max_kept_in_memory:
-            if self.has_used():
-                with self.lock:
+            with self.lock:
+                if self.has_used():
                     chunk_to_remove = self.find_candidates(in_memory=True)[-1]
-                    assert chunk_to_remove.used
+                    assert chunk_to_remove.used > 0
                     x, y = chunk_to_remove.x, chunk_to_remove.y
                     chunk_to_remove.x, chunk_to_remove.y = None, None
                     del x
                     del y
                     chunk_to_remove.in_memory = False
-                    chunk_to_remove.used = False
+                    chunk_to_remove.used = 0
                     print("[gpu] removed ", chunk_to_remove.i)
-            else:
-                time.sleep(0.2)
-                return
+                else:
+                    time.sleep(0.2)
+                    return
         res = self.async_dataset_reader.get_chunk_on_gpu(
             set(map(lambda chunk: chunk.i, 
                 filter(lambda chunk: chunk.in_memory, self.chunks))))
@@ -91,7 +95,7 @@ class AsyncDatasetLoaderToGPU:
         for i in range(len(self.chunks), chunk_i + 1):
             self.chunks.append(DatasetChunk(i=i, x=None, y=None, 
                                             in_memory=False,
-                                            last_read=0, used=False))
+                                            last_read=0, used=0))
         candidate = self.chunks[chunk_i]
             
         candidate.x = x
@@ -101,15 +105,27 @@ class AsyncDatasetLoaderToGPU:
             split_left_x, split_right_x = candidate.x[:self.test_samples_count], candidate.x[self.test_samples_count:]
             split_left_y, split_right_y = candidate.y[:self.test_samples_count], candidate.y[self.test_samples_count:]
             if self.x_test == None:
-               self.x_test = split_left_x.clone()
-               self.y_test = split_left_y.clone()
+                self.x_test = split_left_x
+                self.y_test = split_left_y
+
+                is_infected = self.async_dataset_reader.storage.get("is_infected", i)
+                # infected_indices = set(torch.arange(self.x_test.shape[0])[is_infected].numpy())
+                # test_indices = torch.LongTensor(list(set(torch.arange(self.x_test.shape[0])) - 
+                #                                         infected_indices))
+
+                self.test_indices = ~is_infected[:self.test_samples_count]
+                self.x_test = self.x_test[self.test_indices].clone()
+                self.y_test = self.y_test[self.test_indices].clone()
+
+                self.test_indices = self.test_indices.cpu()
+
             candidate.x = split_right_x
             candidate.y = split_right_y
 
         #.to(self.device) #, map_location=device)
         with self.lock:
             candidate.in_memory = True
-            candidate.used = False
+            candidate.used = 0
         print(f"[gpu] read {chunk_i}")
         self.first_loaded_event.set()
         
@@ -118,7 +134,7 @@ class AsyncDatasetLoaderToGPU:
         while True:
             self.read_next()
 
-    def iter_train_batches(self):
+    def iter_train_batches(self, epoch):
         self.first_loaded_event.wait()
 
         with self.lock:
@@ -127,12 +143,15 @@ class AsyncDatasetLoaderToGPU:
             x_train_chunk = candidate.x#.to(self.device, dtype=torch.float32, non_blocking=True)
             y_train_chunk = candidate.y#.to(self.device, dtype=torch.float32, non_blocking=True)
 
-        
+            if self.writer is not None:
+                self.writer.add_scalar('GPU/Chunk id', candidate.i, epoch)
+                self.writer.add_scalar('GPU/Reuse', candidate.used, epoch)
+                
             for x, y in zip(torch.split(x_train_chunk, self.async_dataset_reader.params["batch_size"]),
                             torch.split(y_train_chunk, self.async_dataset_reader.params["batch_size"])):
                 yield (x, y)
 
-            candidate.used = True    
+            candidate.used += 1    
             self.time_counter += 1
             candidate.last_read = self.time_counter
 
@@ -148,7 +167,7 @@ class AsyncDatasetLoaderToGPU:
 
 
 class AsyncDatasetReader:
-    def __init__(self, path, max_kept_in_memory):
+    def __init__(self, path, max_kept_in_memory, writer=None):
         global async_dataset_reader_thread
 
         assert max_kept_in_memory > 1
@@ -164,6 +183,8 @@ class AsyncDatasetReader:
         self.last_read = -1
         self.device = torch.device("cuda:0")
 
+        self.writer = writer
+
         async_dataset_reader_thread = threading.Thread(target=self.read_infinitely)
         async_dataset_reader_thread.start()
 
@@ -171,10 +192,15 @@ class AsyncDatasetReader:
         self.params = self.storage.wait_meta_change("params", None)
         self.chunks_count = self.storage.wait_meta_change("chunks_count", 0)
 
-    def find_candidates(self, in_memory):
+    def find_candidates(self, in_memory, sort_by_used=False):
         stats = list(filter(lambda chunk: chunk.in_memory == in_memory, self.chunks))
-        stats.sort(key=lambda chunk: chunk.last_read)
-        # print(f"priorites({in_memory}) ", stats)
+        if sort_by_used:
+            sort_by = lambda chunk: chunk.used
+        else:
+            sort_by = lambda chunk: chunk.last_read
+        stats.sort(key=sort_by)
+        # if in_memory:
+        #     print(f"[cpu] priorites({in_memory}) ", stats)
         return stats
     
     def count_in_memory(self):
@@ -188,7 +214,7 @@ class AsyncDatasetReader:
         for i in range(len(self.chunks), self.chunks_count):
             self.chunks.append(DatasetChunk(i=i, x=None, y=None, 
                                             in_memory=False,
-                                            last_read=0, used=False))
+                                            last_read=0, used=0))
         
       
         if self.count_in_memory() == self.chunks_count:
@@ -200,14 +226,14 @@ class AsyncDatasetReader:
         if self.count_in_memory() == self.max_kept_in_memory:
             if self.has_used():
                 with self.lock:
-                    chunk_to_remove = self.find_candidates(in_memory=True)[-1]
-                    assert chunk_to_remove.used
+                    chunk_to_remove = self.find_candidates(in_memory=True, sort_by_used=True)[-1]
+                    assert chunk_to_remove.used > 0
                     x, y = chunk_to_remove.x, chunk_to_remove.y
                     chunk_to_remove.x, chunk_to_remove.y = None, None
                     del x
                     del y
                     chunk_to_remove.in_memory = False
-                    chunk_to_remove.used = False
+                    chunk_to_remove.used += 1
                     print("removed ", chunk_to_remove.i)
             else:
                 time.sleep(0.2)
@@ -222,7 +248,7 @@ class AsyncDatasetReader:
         #.to(self.device) #, map_location=device)
         with self.lock:
             candidate.in_memory = True
-            candidate.used = False
+            candidate.used = 0
         print(f"read {i}")
         self.first_loaded_event.set()
         
@@ -251,9 +277,12 @@ class AsyncDatasetReader:
             except Exception as e:
                 print("some exeception during loading into memory", e)
                 return None
-
-            candidate.used = True    
-            self.time_counter += 1
+            
+            candidate.used += 1
             candidate.last_read = self.time_counter
+            if self.writer:
+                self.writer.add_scalar('CPU/Chunk id', candidate.i, self.time_counter)
+                self.writer.add_scalar('CPU/Reuse', candidate.used, self.time_counter)
+            self.time_counter += 1
 
         return i, x_train_chunk, y_train_chunk

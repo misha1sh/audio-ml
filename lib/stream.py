@@ -11,6 +11,17 @@ class Stream:
     def __next__(self):
         return next(self.generator)
     
+    def skip(self, count):
+        def generator():
+            n = count
+            for i in self.generator:
+                n -= 1
+                if n == 0: break
+            for i in self.generator:
+                yield i
+
+        return Stream(generator()) 
+    
     def limit(self, count):
         def generator():
             n = count

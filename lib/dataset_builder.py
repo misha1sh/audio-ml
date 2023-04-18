@@ -141,10 +141,9 @@ def calculate_word_features_for_tokens(input, params):
     input = [get_word_features(s, params) for s in input]
     return torch.stack(input)
 
-# randomly replaces tokens with UNDEF. Required for working with shapely
-def infect_tokens(features, tokens_list, params):
-    assert len(features) == len(tokens_list)
 
+# randomly replaces tokens with UNDEF. Required for working with shapely
+def infect_undef(features, tokens_list, params):
     # for shapely we want to infect tokens in linear distribution
     infected_tokens_count = random.randrange(len(tokens_list))
     normal_tokens_count = len(tokens_list) - infected_tokens_count
@@ -159,6 +158,44 @@ def infect_tokens(features, tokens_list, params):
             features_new[i] = undef_word_features(params)
             tokens_list_new[i] = UNDEF_TOKEN
     return features_new, tokens_list_new
+
+def infect_undef(features, tokens_list, params):
+    # for shapely we want to infect tokens in linear distribution
+    infected_tokens_count = random.randrange(len(tokens_list))
+    normal_tokens_count = len(tokens_list) - infected_tokens_count
+    infected_tokens_bits = [True for i in range(infected_tokens_count)] + \
+                           [False for i in range(normal_tokens_count)]
+    random.shuffle(infected_tokens_bits)
+
+    features_new = torch.clone(features)
+    tokens_list_new = tokens_list.copy()
+    for i, is_infected in enumerate(infected_tokens_bits):
+        if is_infected:
+            features_new[i] = undef_word_features(params)
+            tokens_list_new[i] = UNDEF_TOKEN
+    return features_new, tokens_list_new
+
+def infect_tokens(features, tokens_list, params):
+    assert len(features) == len(tokens_list)
+
+    if infect_type == 'REPLACE_UNDEF':
+        res = infect_undef(features, tokens_list, params)
+
+    if infect_type == 'INCORRECT_PUNCT_RANDOM_PLACE':
+        res = infect_undef(features, tokens_list, params)
+
+    if infect_type == 'INCORRECT_PUNCT_CENTER':
+        res = infect_undef(features, tokens_list, params)
+
+    if infect_type == 'CORRECT_PUNCT_CENTER':
+        res = infect_undef(features, tokens_list, params)
+
+    if infect_type == 'CORRECT_PUNCT_RIGHT':
+        res = infect_undef(features, tokens_list, params)
+
+    return *res, id
+
+
 
 
 def create_dataset_for_text(text, params):
@@ -180,8 +217,16 @@ def create_dataset_for_text(text, params):
     WORDS_LEFT = params["INPUT_WORDS_CNT_LEFT"]
     WORDS_RIGHT = params["INPUT_WORDS_CNT_RIGHT"]
     for i in range(WORDS_LEFT, len(input) - WORDS_RIGHT):
-        take_sample = output[i] != 0 or random.random() < 0.1
+        take_sample = output[i] != 0 or random.random() < params['NON_PUNCT_PROB']
         if not take_sample: continue
+
+        if random.random() < params['INFECTED_TEXT_PROB']:
+            infect_type = random.choices(*list(zip(*params['INFECT_TYPE_PROBS'].items())))
+            infect_id = params['INFECT_TYPE_TO_ID'][infect_type]
+        else:
+            infect_type = "nothing"
+            infect_id = 0
+
 
         if params["RETAIN_LEFT_PUNCT"]:
             inp = torch.zeros_like(input[i - WORDS_LEFT: i + WORDS_RIGHT])
@@ -207,9 +252,10 @@ def create_dataset_for_text(text, params):
             inp = input[i - WORDS_LEFT: i + WORDS_RIGHT]
 
         out = output[i]
-        infect = random.random() < params['INFECTED_TEXT_PROB']
-        if infect:
-            inp, inp_tokens = infect_tokens(inp, inp_tokens, params)
+        # infect = random.random() < params['INFECTED_TEXT_PROB']
+        # if infect:
+        #     inp, inp_tokens = infect_tokens(inp, inp_tokens, params)
+
         # text = " ".join(inp_tokens[:WORDS_LEFT]) + " #" + str(params["ID_TO_PUNCTUATION"][out.item()]) + "# " + \
         #        " ".join(inp_tokens[WORDS_LEFT: WORDS_LEFT + WORDS_RIGHT])
 

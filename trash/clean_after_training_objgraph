@@ -1,0 +1,35 @@
+import __main__
+
+for i in ["_", "__", "___", "____", "_____", "trainer", "model", "optimizer", "Out"] + \
+         ["_" + str(j) for j in range(100)]:
+    for j in [locals(), globals(), __main__.__dict__]:
+        try:
+            del j[i]
+        except: pass
+        for f in range(100):
+            try:
+                del j["_oh"][f]
+            except:
+                pass
+import sys
+try:
+    sys.last_traceback.tb_next = None
+except: pass
+
+import objgraph
+for i in objgraph.by_type('Trainer'):
+    i.model = None
+    i.x = None
+    i.y = None
+    i.optimizer = None
+    i.x_train = None
+    i.y_train = None
+    i.x_test = None
+    i.y_test = None
+    i.dataset = None
+    
+import gc
+# aa.clear()
+gc.collect()
+torch.cuda.empty_cache() 
+1/0

@@ -14,7 +14,9 @@ def sample(sample_count, x):
     idx = perm[:sample_count]
     return x[idx]
 
-
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 # class PreheatSampler:
 #     def __init__(self, initial_count, grow_amount, patience):
 #         self.samples_count = initial_count
@@ -112,15 +114,18 @@ class Trainer:
             "train_loss": [],
             "test_loss": [],
         }
+        self.additional_test_loss = lambda y_real, y_pred, epoch: None
         self.enable_chunking = enable_chunking
         # self.history.update({i: [] for i in additional_losses})
 
     def set_data(self, dataset):
         self.dataset = dataset
 
-    def calc_loss_on_data_internal(self, x_real, y_real):
+    def calc_loss_on_data_internal(self, x_real, y_real, return_pred = False):
         y_pred = self.model(x_real)
         err = self.loss(y_pred, y_real)
+        if return_pred:
+            return err, y_pred
         return err
 
     def train_batch(self, x_real, y_real):
@@ -128,8 +133,8 @@ class Trainer:
         err = self.calc_loss_on_data_internal(self.sampler.sample(x_real), y_real)
         err.backward()
         self.optimizer.step()
-        if self.scheduler:
-            self.scheduler.step(err)
+        # if self.scheduler:
+        #     self.scheduler.step(err)
         return err.item()
 
     def predict(self, x):
@@ -138,7 +143,7 @@ class Trainer:
     def get_lr(self):
         return self.optimizer.param_groups[0]['lr']
 
-    def train(self, epochs, batch=None, chunk_size=None, trial=None, log=True):
+    def train(self, epochs, batch=None, chunk_size=None, trial=None, log=True, writer = None):
         assert (self.enable_chunking and chunk_size) or (not self.enable_chunking and not chunk_size)
 
         report_period = (epochs // 4)
@@ -148,21 +153,36 @@ class Trainer:
             self.model.train()
 
             train_losses = []
-            for x, y in self.dataset.iter_train_batches():
+            for x, y in self.dataset.iter_train_batches(epoch):
                 train_losses.append(self.train_batch(x, y))
+            del x
+            del y
 
             train_loss = sum(train_losses) / len(train_losses)
 
             self.model.eval()
             with torch.no_grad():
-                test_loss = self.calc_loss_on_data_internal(self.dataset.x_test.to(self.device),
-                                                            self.dataset.y_test).item()
+                test_loss, y_test_pred = \
+                    self.calc_loss_on_data_internal(self.dataset.x_test, #.to(self.device),
+                                                    self.dataset.y_test, True)
+                test_loss = test_loss.item()
+                self.additional_test_loss(self.dataset.y_test, y_test_pred, epoch)
+                del y_test_pred
+
+            if self.scheduler:
+                self.scheduler.step(test_loss)
+
 
             self.history['train_loss'].append(train_loss)
             self.history['test_loss'].append(test_loss)
 
             time_passed = time.time() - start_time
             self.sampler.update_loss(test_loss, time_passed)
+
+            if writer is not None:
+                writer.add_scalar('! Loss/train', train_loss, epoch)
+                writer.add_scalar('! Loss/test', test_loss, epoch)
+                writer.add_scalar('1 Misc/Learning rate', get_lr(self.optimizer), epoch)
 
             if log:
                 additional_losses = ""
@@ -179,6 +199,10 @@ class Trainer:
                 print('[%d/%d] [%.1f s]\t loss: %.4f loss_test: %.4f  lr: %.4f  %s\r'
                     % (epoch, epochs, time_passed,
                         train_loss, test_loss, self.get_lr(), additional_losses))
+
+            if get_lr(self.optimizer) < 3e-5:
+                print("stopped because of low learning rate")
+                return
 
             if self.early_stop_lambda(self, test_loss, time_passed,log):
                 if log: print("Early stop at ", epoch, " epoch")
