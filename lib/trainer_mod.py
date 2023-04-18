@@ -166,7 +166,8 @@ class Trainer:
                     self.calc_loss_on_data_internal(self.dataset.x_test, #.to(self.device),
                                                     self.dataset.y_test, True)
                 test_loss = test_loss.item()
-                self.additional_test_loss(self.dataset.y_test, y_test_pred, epoch)
+                self.additional_test_loss(self.dataset.y_test, y_test_pred,
+                                          self.dataset.is_infected_test, epoch)
                 del y_test_pred
 
             if self.scheduler:

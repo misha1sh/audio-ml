@@ -20,7 +20,7 @@ torch.cuda.is_available(), torch.rand(1).to('cuda:0')
 
 from async_dataset_reader2 import AsyncDatasetReader, AsyncDatasetLoaderToGPU
 dataset_mem_reader = AsyncDatasetReader(path="cache2/storage", max_kept_in_memory=6, writer=writer)
-dataset_to_gpu_loader = AsyncDatasetLoaderToGPU(dataset_mem_reader, max_kept_in_memory=2, 
+dataset_to_gpu_loader = AsyncDatasetLoaderToGPU(dataset_mem_reader, max_kept_in_memory=2,
                                                 test_samples_count=20000, writer=writer)
 
 dataset_to_gpu_loader.first_loaded_event.wait()
@@ -55,6 +55,13 @@ N_features = params["TOTAL_WORD_FEATURES_CNT"]
 
 INTERNAL_EMBEDDING_SIZE = 128
 
+# На 4 словах:
+# 128, 4 heads, transfomer, transformer, lstm -- 0.1149
+# 128, 8 heads, transfomer, transformer, lstm  -- 0.1156
+# 128, 8 heads, transfomer, transformer, transformer  -- 0.1134
+# 256, 4 heads, transfomer, transformer, transformer  -- 0.1095
+
+print("AMOUNT OF HEADS IS 8\n" * 5)
 encoder_configs = [{
     "dim_model": INTERNAL_EMBEDDING_SIZE, #N_variants * N_features,
     "residual_norm_style": "pre",  # Optional, pre/post
@@ -85,11 +92,11 @@ class LSTM(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
 
-        self.lstm = nn.LSTM(INTERNAL_EMBEDDING_SIZE, INTERNAL_EMBEDDING_SIZE // 2, 
+        self.lstm = nn.LSTM(INTERNAL_EMBEDDING_SIZE, INTERNAL_EMBEDDING_SIZE // 2,
                             num_layers=1, batch_first=True, bidirectional=True)
     def forward(self, x):
         return self.lstm(x)[0]
-    
+
 class Model(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
@@ -101,9 +108,9 @@ class Model(nn.Module):
         # output is (N, N_words, )
 
         self.model = nn.Sequential(
-            # nn.Flatten(2), 
+            # nn.Flatten(2),
             # (N, N_words, N_features + ...)
-            # nn.TransformerEncoder(encoder_layer, num_layers=1),encoder = 
+            # nn.TransformerEncoder(encoder_layer, num_layers=1),encoder =
             nn.Linear(N_features, INTERNAL_EMBEDDING_SIZE),
             nn.BatchNorm1d(N_words),
             nn.ReLU(),
@@ -111,11 +118,12 @@ class Model(nn.Module):
             # (N, N_words, INTERNAL_EMBEDDING_SIZE)
             xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[0])),
             xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[1])),
-            nn.BatchNorm1d(N_words),
-            
-            LSTM(),
-            nn.BatchNorm1d(N_words),
-            
+            # xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[1])),
+            # nn.BatchNorm1d(N_words),
+
+            # LSTM(),
+            # nn.BatchNorm1d(N_words),
+
             # xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[2])),
             # xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[3])),
 
@@ -152,11 +160,11 @@ def train_model():
     Trainer = trainer_mod.Trainer
 
     # model = torch.compile(model)
-    optimizer = torch.optim.Adam(model.parameters(), 
+    optimizer = torch.optim.Adam(model.parameters(),
                             lr=1e-3)
                             # betas=(0.5, 0.999))
 
-    trainer = Trainer(model=model, 
+    trainer = Trainer(model=model,
                     # enable_chunking=True,
                     # loss=nn.MSELoss(),
                     loss=nn.CrossEntropyLoss(),
@@ -165,32 +173,49 @@ def train_model():
                     # patience = 15
                     scheduler=ReduceLROnPlateau(optimizer, factor=0.8, threshold=1e-5, patience=15),
                     additional_losses={
-                        # "accurancy": lambda trainer: {"accurancy": 
+                        # "accurancy": lambda trainer: {"accurancy":
                         #    float(torch.mean(torch.abs(trainer.model(trainer.x_test) - trainer.y_test)).detach())
                         # },
                     })
-    def additional_test_loss(y_real, y_pred, epoch):
-        _, y_pred_tags = torch.max(y_pred, dim = 1)
-        _, y_real_tags = torch.max(y_real, dim = 1)
-        matrix = torchmetrics.functional.classification.multiclass_confusion_matrix(
-            y_pred_tags, y_real_tags, num_classes=params['TARGET_CLASSES_COUNT'],
-            normalize='true')
-        if epoch % 10 == 0:
-            confusion_matrix_df = pd.DataFrame(matrix.cpu().numpy()).rename(
-                columns=params['ID_TO_PUNCTUATION'], index=params['ID_TO_PUNCTUATION'])
-            sns.heatmap(confusion_matrix_df, annot=True)
-            fig = plt.gcf()
-            writer.add_figure("CONFUSION_MATRIX", fig)
-            plt.close()
+    def additional_test_loss(y_real, y_pred, is_infected, epoch):
 
-        for i in range(params['TARGET_CLASSES_COUNT']):
-            for j in range(params['TARGET_CLASSES_COUNT']):
-                if matrix[i][j] > 0.05:
-                    writer.add_scalar(f'Confusion/{abs((i - j)*10 + i)}       ' +
-                                    f'{params["ID_TO_PUNCTUATION"][i]} - {params["ID_TO_PUNCTUATION"][j]}', 
-                                    (matrix[i][j]), 
-                                    epoch)
-                    
+
+        def add_conf_matrix(name, y_real, y_pred):
+            _, y_pred_tags = torch.max(y_pred, dim = 1)
+            _, y_real_tags = torch.max(y_real, dim = 1)
+            matrix = torchmetrics.functional.classification.multiclass_confusion_matrix(
+                y_pred_tags, y_real_tags, num_classes=params['TARGET_CLASSES_COUNT'],
+                normalize='true')
+            if epoch % 10 == 0:
+                confusion_matrix_df = pd.DataFrame(matrix.cpu().numpy()).rename(
+                    columns=params['ID_TO_PUNCTUATION'], index=params['ID_TO_PUNCTUATION'])
+                sns.heatmap(confusion_matrix_df, annot=True)
+                fig = plt.gcf()
+                writer.add_figure(name, fig)
+                plt.close()
+
+        for infect_id, infect_type in params['ID_TO_INFECT_TYPE'].items():
+            add_conf_matrix("Confusion Matrix/" + infect_type,
+                            y_real[is_infected == infect_id],
+                            y_pred[is_infected == infect_id])
+
+        add_conf_matrix("Confusion Matrix/ ! OVERALL", y_real, y_pred)
+
+        losses = {}
+        for infect_id, infect_type in params['ID_TO_INFECT_TYPE'].items():
+            with torch.no_grad():
+                losses[infect_type] = nn.CrossEntropyLoss()(y_pred[is_infected == infect_id],
+                                             y_real[is_infected == infect_id]).item()
+        losses['Total'] =  nn.CrossEntropyLoss()(y_pred, y_real).item()
+        writer.add_scalars(f'! Loss/test_by_category', losses, epoch)
+        # for i in range(params['TARGET_CLASSES_COUNT']):
+        #     for j in range(params['TARGET_CLASSES_COUNT']):
+        #         if matrix[i][j] > 0.05:
+        #             writer.add_scalar(f'Confusion/{abs((i - j)*10 + i)}       ' +
+        #                             f'{params["ID_TO_PUNCTUATION"][i]} - {params["ID_TO_PUNCTUATION"][j]}',
+        #                             (matrix[i][j]),
+        #                             epoch)
+
         if epoch % 31 == 30 or epoch == 0:
             os.makedirs("results", exist_ok=True)
             torch.save(trainer.model, "results/some_model.pt")
@@ -198,8 +223,8 @@ def train_model():
                 dill.dump(Model, file)
             with open("results/storage_path.dill", "wb") as file:
                 dill.dump(trainer.dataset.async_dataset_reader.storage.path, file)
-            with open("results/test_indices.dill", "wb") as file:
-                dill.dump(trainer.dataset.test_indices, file)
+            with open("results/is_infected_test.dill", "wb") as file:
+                dill.dump(trainer.dataset.is_infected_test, file)
 
     trainer.additional_test_loss = additional_test_loss
     # early_stopper = EarlyStopper(patience=20, min_delta=0.01)

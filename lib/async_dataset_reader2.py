@@ -24,7 +24,7 @@ class AsyncDatasetLoaderToGPU:
 
         self.async_dataset_reader = async_dataset_reader
         self.time_counter = 0
-                
+
         self.max_kept_in_memory = max_kept_in_memory
         self.lock = threading.Lock()
         self.first_loaded_event = threading.Event()
@@ -51,7 +51,7 @@ class AsyncDatasetLoaderToGPU:
         stats.sort(key=lambda chunk: chunk.last_read)
         # print(f"priorites({in_memory}) ", stats)
         return stats
-    
+
     def count_in_memory(self):
         return sum(map(lambda chunk: chunk.in_memory, self.chunks))
 
@@ -65,7 +65,7 @@ class AsyncDatasetLoaderToGPU:
             # wait till next chunk is written
             self.storage.wait_meta_change("chunks_count", self.chunks_count)
             return
-        
+
         if self.count_in_memory() >= self.max_kept_in_memory:
             with self.lock:
                 if self.has_used():
@@ -82,22 +82,22 @@ class AsyncDatasetLoaderToGPU:
                     time.sleep(0.2)
                     return
         res = self.async_dataset_reader.get_chunk_on_gpu(
-            set(map(lambda chunk: chunk.i, 
+            set(map(lambda chunk: chunk.i,
                 filter(lambda chunk: chunk.in_memory, self.chunks))))
         if res is None:
             print("[gpu] loaded all into memory(2)")
             time.sleep(0.2)
             return
-        
+
         chunk_i, x, y = res
         print(f"[gpu] reading {chunk_i}")
 
         for i in range(len(self.chunks), chunk_i + 1):
-            self.chunks.append(DatasetChunk(i=i, x=None, y=None, 
+            self.chunks.append(DatasetChunk(i=i, x=None, y=None,
                                             in_memory=False,
                                             last_read=0, used=0))
         candidate = self.chunks[chunk_i]
-            
+
         candidate.x = x
         candidate.y = y
 
@@ -110,14 +110,13 @@ class AsyncDatasetLoaderToGPU:
 
                 is_infected = self.async_dataset_reader.storage.get("is_infected", i)
                 # infected_indices = set(torch.arange(self.x_test.shape[0])[is_infected].numpy())
-                # test_indices = torch.LongTensor(list(set(torch.arange(self.x_test.shape[0])) - 
+                # test_indices = torch.LongTensor(list(set(torch.arange(self.x_test.shape[0])) -
                 #                                         infected_indices))
 
-                self.test_indices = ~is_infected[:self.test_samples_count]
-                self.x_test = self.x_test[self.test_indices].clone()
-                self.y_test = self.y_test[self.test_indices].clone()
-
-                self.test_indices = self.test_indices.cpu()
+                # self.test_indices = ~(is_infected[:self.test_samples_count])
+                self.is_infected_test = is_infected[:self.test_samples_count].clone()
+                self.x_test = self.x_test[:self.test_samples_count].clone()
+                self.y_test = self.y_test[:self.test_samples_count].clone()
 
             candidate.x = split_right_x
             candidate.y = split_right_y
@@ -128,7 +127,7 @@ class AsyncDatasetLoaderToGPU:
             candidate.used = 0
         print(f"[gpu] read {chunk_i}")
         self.first_loaded_event.set()
-        
+
     def read_infinitely(self):
         self.wait_for_first_chunk()
         while True:
@@ -146,12 +145,12 @@ class AsyncDatasetLoaderToGPU:
             if self.writer is not None:
                 self.writer.add_scalar('GPU/Chunk id', candidate.i, epoch)
                 self.writer.add_scalar('GPU/Reuse', candidate.used, epoch)
-                
+
             for x, y in zip(torch.split(x_train_chunk, self.async_dataset_reader.params["batch_size"]),
                             torch.split(y_train_chunk, self.async_dataset_reader.params["batch_size"])):
                 yield (x, y)
 
-            candidate.used += 1    
+            candidate.used += 1
             self.time_counter += 1
             candidate.last_read = self.time_counter
 
@@ -174,7 +173,7 @@ class AsyncDatasetReader:
 
         self.storage = Storage(path)
         self.time_counter = 0
-                
+
         self.max_kept_in_memory = max_kept_in_memory
         self.lock = threading.Lock()
         self.first_loaded_event = threading.Event()
@@ -202,7 +201,7 @@ class AsyncDatasetReader:
         # if in_memory:
         #     print(f"[cpu] priorites({in_memory}) ", stats)
         return stats
-    
+
     def count_in_memory(self):
         return sum(map(lambda chunk: chunk.in_memory, self.chunks))
 
@@ -212,17 +211,17 @@ class AsyncDatasetReader:
     def read_next(self):
         self.chunks_count = self.storage.get_meta("chunks_count")
         for i in range(len(self.chunks), self.chunks_count):
-            self.chunks.append(DatasetChunk(i=i, x=None, y=None, 
+            self.chunks.append(DatasetChunk(i=i, x=None, y=None,
                                             in_memory=False,
                                             last_read=0, used=0))
-        
-      
+
+
         if self.count_in_memory() == self.chunks_count:
             print("loaded all into memory")
             # wait till next chunk is written
             self.storage.wait_meta_change("chunks_count", self.chunks_count)
             return
-        
+
         if self.count_in_memory() == self.max_kept_in_memory:
             if self.has_used():
                 with self.lock:
@@ -251,7 +250,7 @@ class AsyncDatasetReader:
             candidate.used = 0
         print(f"read {i}")
         self.first_loaded_event.set()
-        
+
     def read_infinitely(self):
         self.wait_for_first_chunk()
         while True:
@@ -277,7 +276,7 @@ class AsyncDatasetReader:
             except Exception as e:
                 print("some exeception during loading into memory", e)
                 return None
-            
+
             candidate.used += 1
             candidate.last_read = self.time_counter
             if self.writer:
