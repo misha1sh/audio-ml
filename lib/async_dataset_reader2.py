@@ -28,6 +28,7 @@ class AsyncDatasetLoaderToGPU:
         self.max_kept_in_memory = max_kept_in_memory
         self.lock = threading.Lock()
         self.first_loaded_event = threading.Event()
+        self.loaded_event = threading.Event()
         self.chunks = [] # List of DatasetChunk
 
         self.last_read = -1
@@ -38,17 +39,24 @@ class AsyncDatasetLoaderToGPU:
 
         self.writer = writer
 
+
+
+        print("[gpu] loading test")
+        self.x_test = async_dataset_reader.storage.get_meta("x_test").float().cuda()
+        self.y_test = async_dataset_reader.storage.get_meta("y_test").float().cuda()
+        self.text_res_test = async_dataset_reader.storage.get_meta("text_res_test")
+        self.is_infected_test = async_dataset_reader.storage.get_meta("is_infected_test")
+        print("[gpu] test loaded", self.x_test.shape)
+
         async_dataset_to_gpu_loader_thread = threading.Thread(target=self.read_infinitely)
         async_dataset_to_gpu_loader_thread.start()
-
-
 
     def wait_for_first_chunk(self):
         self.async_dataset_reader.first_loaded_event.wait()
 
     def find_candidates(self, in_memory):
         stats = list(filter(lambda chunk: chunk.in_memory == in_memory, self.chunks))
-        stats.sort(key=lambda chunk: chunk.last_read)
+        stats.sort(key=lambda chunk: chunk.used * 1000 + chunk.last_read)
         # print(f"priorites({in_memory}) ", stats)
         return stats
 
@@ -59,6 +67,8 @@ class AsyncDatasetLoaderToGPU:
         return any(map(lambda chunk: chunk.used > 0 and chunk.in_memory, self.chunks))
 
     def read_next(self):
+        self.loaded_event.clear()
+
         self.chunks_count = self.async_dataset_reader.chunks_count
         if self.count_in_memory() == self.chunks_count:
             print("[gpu] loaded all into memory")
@@ -70,6 +80,8 @@ class AsyncDatasetLoaderToGPU:
             with self.lock:
                 if self.has_used():
                     chunk_to_remove = self.find_candidates(in_memory=True)[-1]
+                    if chunk_to_remove.used == 0:
+                        print(self.find_candidates(in_memory=True))
                     assert chunk_to_remove.used > 0
                     x, y = chunk_to_remove.x, chunk_to_remove.y
                     chunk_to_remove.x, chunk_to_remove.y = None, None
@@ -101,25 +113,25 @@ class AsyncDatasetLoaderToGPU:
         candidate.x = x
         candidate.y = y
 
-        if candidate.i == 0:
-            split_left_x, split_right_x = candidate.x[:self.test_samples_count], candidate.x[self.test_samples_count:]
-            split_left_y, split_right_y = candidate.y[:self.test_samples_count], candidate.y[self.test_samples_count:]
-            if self.x_test == None:
-                self.x_test = split_left_x
-                self.y_test = split_left_y
+        # if candidate.i == 0:
+        #     split_left_x, split_right_x = candidate.x[:self.test_samples_count], candidate.x[self.test_samples_count:]
+        #     split_left_y, split_right_y = candidate.y[:self.test_samples_count], candidate.y[self.test_samples_count:]
+        #     if self.x_test == None:
+        #         self.x_test = split_left_x
+        #         self.y_test = split_left_y
 
-                is_infected = self.async_dataset_reader.storage.get("is_infected", i)
-                # infected_indices = set(torch.arange(self.x_test.shape[0])[is_infected].numpy())
-                # test_indices = torch.LongTensor(list(set(torch.arange(self.x_test.shape[0])) -
-                #                                         infected_indices))
+        #         is_infected = self.async_dataset_reader.storage.get("is_infected", i)
+        #         # infected_indices = set(torch.arange(self.x_test.shape[0])[is_infected].numpy())
+        #         # test_indices = torch.LongTensor(list(set(torch.arange(self.x_test.shape[0])) -
+        #         #                                         infected_indices))
 
-                # self.test_indices = ~(is_infected[:self.test_samples_count])
-                self.is_infected_test = is_infected[:self.test_samples_count].clone()
-                self.x_test = self.x_test[:self.test_samples_count].clone()
-                self.y_test = self.y_test[:self.test_samples_count].clone()
+        #         # self.test_indices = ~(is_infected[:self.test_samples_count])
+        #         self.is_infected_test = is_infected[:self.test_samples_count].clone()
+        #         self.x_test = self.x_test[:self.test_samples_count].clone()
+        #         self.y_test = self.y_test[:self.test_samples_count].clone()
 
-            candidate.x = split_right_x
-            candidate.y = split_right_y
+        #     candidate.x = split_right_x
+        #     candidate.y = split_right_y
 
         #.to(self.device) #, map_location=device)
         with self.lock:
@@ -127,6 +139,7 @@ class AsyncDatasetLoaderToGPU:
             candidate.used = 0
         print(f"[gpu] read {chunk_i}")
         self.first_loaded_event.set()
+        self.loaded_event.set()
 
     def read_infinitely(self):
         self.wait_for_first_chunk()
@@ -135,6 +148,18 @@ class AsyncDatasetLoaderToGPU:
 
     def iter_train_batches(self, epoch):
         self.first_loaded_event.wait()
+
+        waited = 0
+        while True:
+            with self.lock:
+                candidate = self.find_candidates(in_memory=True)[0]
+                if candidate.used <= 2: break
+            self.loaded_event.wait()
+            print("[gpu] WAITED BECAUSE OF OVERUSE")
+            waited += 1
+
+        self.writer.add_scalar('GPU/Wait because of overuse', waited, epoch)
+
 
         with self.lock:
             candidate = self.find_candidates(in_memory=True)[0]
@@ -271,8 +296,8 @@ class AsyncDatasetReader:
             i = candidate.i
             print("iter", candidate.i)
             try:
-                x_train_chunk = candidate.x.to(self.device) #, dtype=torch.float32, non_blocking=True)
-                y_train_chunk = candidate.y.to(self.device) #, dtype=torch.float32, non_blocking=True)
+                x_train_chunk = candidate.x.to(self.device, non_blocking=True) #, dtype=torch.float32, non_blocking=True)
+                y_train_chunk = candidate.y.to(self.device, non_blocking=True) #, dtype=torch.float32, non_blocking=True)
             except Exception as e:
                 print("some exeception during loading into memory", e)
                 return None

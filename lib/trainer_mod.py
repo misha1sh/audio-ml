@@ -149,14 +149,20 @@ class Trainer:
         report_period = (epochs // 4)
         start_time = time.time()
 
+        miniepoch = 0
+
         for epoch in range(epochs):
             self.model.train()
 
+            cnt_trained = 0
             train_losses = []
-            for x, y in self.dataset.iter_train_batches(epoch):
-                train_losses.append(self.train_batch(x, y))
-            del x
-            del y
+            while cnt_trained < 100_000:
+                for x, y in self.dataset.iter_train_batches(miniepoch):
+                    train_losses.append(self.train_batch(x, y))
+                    cnt_trained += x.shape[0]
+                    miniepoch += 1
+                del x
+                del y
 
             train_loss = sum(train_losses) / len(train_losses)
 

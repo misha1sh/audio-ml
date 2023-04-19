@@ -223,6 +223,10 @@ def create_dataset_for_text(text, params):
     WORDS_LEFT = params["INPUT_WORDS_CNT_LEFT"]
     WORDS_RIGHT = params["INPUT_WORDS_CNT_RIGHT"]
     for i in range(WORDS_LEFT, len(input) - WORDS_RIGHT):
+        # We cannot place punct after another punct
+        if output[i - 1] != 0:
+            continue
+
         take_sample = output[i] != 0 or random.random() < params['NON_PUNCT_PROB']
         if not take_sample: continue
 
@@ -247,11 +251,11 @@ def create_dataset_for_text(text, params):
                     random.choices(".,", k=incorrect_punct_count)
             random.shuffle(incorrect_punct_arr)
 
-            def place_additional_punctuation(pos):
-                incorrect_punct = incorrect_punct_arr[pos]
+            def place_additional_punctuation(word_pos, pos_to_insert):
+                incorrect_punct = incorrect_punct_arr[word_pos]
                 if incorrect_punct:
-                    inp[pos] = get_word_features(incorrect_punct, params)
-                    inp_tokens[pos] = incorrect_punct
+                    inp[pos_to_insert] = get_word_features(incorrect_punct, params)
+                    inp_tokens[pos_to_insert] = incorrect_punct
                     return True
                 return False
 
@@ -271,34 +275,45 @@ def create_dataset_for_text(text, params):
             if infect_type == 'CORRECT_PUNCT_CENTER' and target_punct_id != 0:
                 incorrect_punct_arr[WORDS_LEFT] = target_punct
 
-            cnt_left = WORDS_LEFT
-            for j in range(i - 1, 0, -1):
-                pos = cnt_left - 1
-                # print("left", input_tokens[j], "pos", pos)
+            # print(i)
 
-                if place_additional_punctuation(pos):
+            cnt_left = WORDS_LEFT
+            word_pos = cnt_left - 1
+            pos_to_insert = cnt_left - 1
+            for j in range(i - 1, -1, -1):
+                if place_additional_punctuation(word_pos, pos_to_insert):
+                    # print('left additional', incorrect_punct_arr[word_pos])
+                    pos_to_insert -= 1
                     cnt_left -= 1
                     if cnt_left == 0: break
 
-                place_word_at_pos(j, pos)
-
+                # print('left', input_tokens[j])
+                place_word_at_pos(j, pos_to_insert)
+                word_pos -= 1
+                pos_to_insert -= 1
                 cnt_left -= 1
                 if cnt_left == 0: break
 
             cnt_right = WORDS_RIGHT
-            for j in range(i + 1, len(input_tokens)):
-                pos = WORDS_LEFT + WORDS_RIGHT - cnt_right
-                # print('right', input_tokens[j], "pos", pos)
+            word_pos = WORDS_LEFT
+            pos_to_insert = WORDS_LEFT
+            for j in range(i, len(input)):
 
-                if output[j] != 0 and not infect_type == 'CORRECT_PUNCT_RIGHT':
-                    # print("skpped ", input_tokens[j])
-                    continue
+                if output[j] != 0:
+                    if infect_type != 'CORRECT_PUNCT_RIGHT' or i == j:
+                        # print("skpped ", input_tokens[j])
+                        continue
 
-                if place_additional_punctuation(pos):
+                if place_additional_punctuation(word_pos, pos_to_insert):
+                    # print('right additional', incorrect_punct_arr[word_pos])
+                    pos_to_insert += 1
                     cnt_right -= 1
                     if cnt_right == 0: break
 
-                place_word_at_pos(j, pos)
+                # print('right', input_tokens[j])
+                place_word_at_pos(j, pos_to_insert)
+                pos_to_insert += 1
+                word_pos += 1
 
                 cnt_right -= 1
                 if cnt_right == 0: break

@@ -4,13 +4,13 @@ class Stream:
             self.generator = iter(generator)
         except TypeError:
             self.generator = generator
-    
+
     def __iter__(self):
         return self
 
     def __next__(self):
         return next(self.generator)
-    
+
     def skip(self, count):
         def generator():
             n = count
@@ -20,8 +20,15 @@ class Stream:
             for i in self.generator:
                 yield i
 
-        return Stream(generator()) 
-    
+        return Stream(generator())
+
+    def get(self, count):
+        res = []
+        for i in self:
+            res.append(i)
+            if len(res) == count:
+                return res
+
     def limit(self, count):
         def generator():
             n = count
@@ -29,14 +36,14 @@ class Stream:
                 yield i
                 n -= 1
                 if n == 0: break
-        return Stream(generator()) 
-    
+        return Stream(generator())
+
     def map(self, func):
         def generator():
             for i in self.generator:
                 yield func(i)
         return Stream(generator())
-    
+
     def group(self, n):
         def generator():
             grouped = []

@@ -15,11 +15,9 @@ shutil.rmtree("./runs")
 writer = SummaryWriter()
 torch.cuda.is_available(), torch.rand(1).to('cuda:0')
 
-
-
-
+print("max_kept_in_memory=2\n" * 5)
 from async_dataset_reader2 import AsyncDatasetReader, AsyncDatasetLoaderToGPU
-dataset_mem_reader = AsyncDatasetReader(path="cache2/storage", max_kept_in_memory=6, writer=writer)
+dataset_mem_reader = AsyncDatasetReader(path="cache2/storage2", max_kept_in_memory=30, writer=writer)
 dataset_to_gpu_loader = AsyncDatasetLoaderToGPU(dataset_mem_reader, max_kept_in_memory=2,
                                                 test_samples_count=20000, writer=writer)
 
@@ -53,15 +51,11 @@ N_words = params["INPUT_WORDS_CNT"]
 # N_variants = params["VARIANTS_CNT"]
 N_features = params["TOTAL_WORD_FEATURES_CNT"]
 
-INTERNAL_EMBEDDING_SIZE = 128
+INTERNAL_EMBEDDING_SIZE = 256
+INTERNAL_EMBEDDING_SIZE2 = 32
 
-# На 4 словах:
-# 128, 4 heads, transfomer, transformer, lstm -- 0.1149
-# 128, 8 heads, transfomer, transformer, lstm  -- 0.1156
-# 128, 8 heads, transfomer, transformer, transformer  -- 0.1134
-# 256, 4 heads, transfomer, transformer, transformer  -- 0.1095
 
-print("AMOUNT OF HEADS IS 8\n" * 5)
+print("INTERNAL_EMBEDDING_SIZE, num_heads\n" * 10)
 encoder_configs = [{
     "dim_model": INTERNAL_EMBEDDING_SIZE, #N_variants * N_features,
     "residual_norm_style": "pre",  # Optional, pre/post
@@ -70,7 +64,7 @@ encoder_configs = [{
         # "dim_model": VARIANTS_CNT * N_features,
     },
     "multi_head_config": {
-        "num_heads": 4,
+        "num_heads": 8,
         "residual_dropout": 0.,
         "attention": {
             "name": "scaled_dot_product", #linformer scaled_dot_product fourier_mix, "linformer" scaled_dot_product,  # whatever attention mechanism
@@ -92,7 +86,7 @@ class LSTM(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
 
-        self.lstm = nn.LSTM(INTERNAL_EMBEDDING_SIZE, INTERNAL_EMBEDDING_SIZE // 2,
+        self.lstm = nn.LSTM(INTERNAL_EMBEDDING_SIZE2, INTERNAL_EMBEDDING_SIZE2 // 2,
                             num_layers=1, batch_first=True, bidirectional=True)
     def forward(self, x):
         return self.lstm(x)[0]
@@ -118,11 +112,15 @@ class Model(nn.Module):
             # (N, N_words, INTERNAL_EMBEDDING_SIZE)
             xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[0])),
             xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[1])),
+            xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[1])),
             # xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[1])),
-            # nn.BatchNorm1d(N_words),
 
-            # LSTM(),
-            # nn.BatchNorm1d(N_words),
+            nn.BatchNorm1d(N_words),
+            nn.Linear(INTERNAL_EMBEDDING_SIZE, INTERNAL_EMBEDDING_SIZE2),
+            nn.BatchNorm1d(N_words),
+            nn.ReLU(),
+            LSTM(),
+            nn.BatchNorm1d(N_words),
 
             # xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[2])),
             # xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[3])),
@@ -131,7 +129,7 @@ class Model(nn.Module):
             #(N, N_words, INTERNAL_EMBEDDING_SIZE)
 
             # nn.Tanh(),
-            nn.Linear(N_words* INTERNAL_EMBEDDING_SIZE, params['TARGET_CLASSES_COUNT']),
+            nn.Linear(N_words* INTERNAL_EMBEDDING_SIZE2, params['TARGET_CLASSES_COUNT']),
             # nn.ReLU(),
             # nn.Linear(100, TARGET_CLASSES_COUNT),
             # nn.Tanh(),
@@ -153,6 +151,10 @@ class Model(nn.Module):
 aa = {}
 def train_model():
     model = Model()
+
+    print("MODEL LOADED\n" * 10)
+    model = torch.load("results/some_model.pt", map_location=torch.device('cuda:0'))
+
     print(round(count_parameters(model), 3), "Mb of parameters")
     import importlib
     import trainer_mod
@@ -160,8 +162,20 @@ def train_model():
     Trainer = trainer_mod.Trainer
 
     # model = torch.compile(model)
-    optimizer = torch.optim.Adam(model.parameters(),
-                            lr=1e-3)
+    import torch_optimizer as optim
+    # optimizer = optim.PID(model.parameters(),
+    #                       lr=0.01,
+    #                       weight_decay=1e-2)
+
+    # optimizer = optim.Yogi(model.parameters(),
+    #                     lr=0.0001)
+
+    optimizer = torch.optim.RAdam(model.parameters(),
+                            lr=0.001)
+
+
+    # optimizer = torch.optim.Adam(model.parameters(),
+    #                         lr=0.0005)
                             # betas=(0.5, 0.999))
 
     trainer = Trainer(model=model,
@@ -171,7 +185,7 @@ def train_model():
                     optimizer=optimizer,
                     # scheduler=None,
                     # patience = 15
-                    scheduler=ReduceLROnPlateau(optimizer, factor=0.8, threshold=1e-5, patience=15),
+                    scheduler=ReduceLROnPlateau(optimizer, factor=0.95, threshold=1e-5, patience=3),
                     additional_losses={
                         # "accurancy": lambda trainer: {"accurancy":
                         #    float(torch.mean(torch.abs(trainer.model(trainer.x_test) - trainer.y_test)).detach())
@@ -186,7 +200,7 @@ def train_model():
             matrix = torchmetrics.functional.classification.multiclass_confusion_matrix(
                 y_pred_tags, y_real_tags, num_classes=params['TARGET_CLASSES_COUNT'],
                 normalize='true')
-            if epoch % 10 == 0:
+            if True: #epoch % 1 == 0:
                 confusion_matrix_df = pd.DataFrame(matrix.cpu().numpy()).rename(
                     columns=params['ID_TO_PUNCTUATION'], index=params['ID_TO_PUNCTUATION'])
                 sns.heatmap(confusion_matrix_df, annot=True)
@@ -216,7 +230,7 @@ def train_model():
         #                             (matrix[i][j]),
         #                             epoch)
 
-        if epoch % 31 == 30 or epoch == 0:
+        if True: # epoch % 31 == 30 or epoch == 0:
             os.makedirs("results", exist_ok=True)
             torch.save(trainer.model, "results/some_model.pt")
             with open("results/some_model_CLASS.dill", "wb") as file:
