@@ -44,6 +44,13 @@ class Stream:
                 yield func(i)
         return Stream(generator())
 
+    def starmap(self, func):
+        def generator():
+            for i in self.generator:
+                for j in func(i):
+                    yield j
+        return Stream(generator())
+
     def group(self, n):
         def generator():
             grouped = []

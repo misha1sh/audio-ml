@@ -6,6 +6,7 @@ from utils import download_file
 from corus import load_lenta2
 import torch
 from utils import ProgressParallel, chunks, size_of_tensor, count_parameters
+from stream import Stream
 # from disklist import DiskList
 
 importlib.reload(dataset_builder)
@@ -31,7 +32,7 @@ def read_lenta_records(records, cnt):
     return res
 
 # https://www.kaggle.com/datasets/d0rj3228/russian-literature
-writers_zip_path = "./dataset.zip"
+writers_zip_path = "./cache2/writers.zip"
 
 def read_writers():
     res = []
@@ -43,6 +44,32 @@ def read_writers():
             with writers_dir.open(f) as file_open:
                 res.append(file_open.read().decode())
     return res
+
+def get_writers_records():
+    with zipfile.ZipFile(writers_zip_path, 'r') as writers_dir:
+        for file in writers_dir.filelist:
+            f = file.filename
+            good_file = ('prose' in f or 'publicism' in f) and 'txt' in f and 'Blok' not in f # and 'Tolstoy' in f
+            if not good_file: continue
+            with writers_dir.open(f) as file_open:
+                yield file_open.read().decode()
+
+def split_into_parts(text):
+    part = ""
+    for line in text.split("\n"):
+        if len(line.split()) > 6 and \
+            len(set(line) & set("ёйцукенгшщзхъфывапролджэячсмитьбю")) > 0:
+            part += line
+        elif len(part) > 0:
+            yield part
+            part = ""
+
+    if part != "":
+        yield part
+
+def get_writers_records_stream():
+    stream = Stream(get_writers_records())
+    return stream.starmap(split_into_parts)
 
 def get_nerus_records():
     return load_nerus(nerus_file)

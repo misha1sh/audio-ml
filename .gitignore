@@ -9,6 +9,7 @@ lib/build*
 */cache/*
 lib/cache2/*
 lib/runs/*
+lib/run_big/*
 cache/*
 lib/dist*
 lib/lib.egg-info*

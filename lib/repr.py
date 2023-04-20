@@ -18,7 +18,7 @@ torch.cuda.is_available(), torch.rand(1).to('cuda:0')
 print("max_kept_in_memory=2\n" * 5)
 from async_dataset_reader2 import AsyncDatasetReader, AsyncDatasetLoaderToGPU
 dataset_mem_reader = AsyncDatasetReader(path="cache2/storage2", max_kept_in_memory=30, writer=writer)
-dataset_to_gpu_loader = AsyncDatasetLoaderToGPU(dataset_mem_reader, max_kept_in_memory=2,
+dataset_to_gpu_loader = AsyncDatasetLoaderToGPU(dataset_mem_reader, max_kept_in_memory=5,
                                                 test_samples_count=20000, writer=writer)
 
 dataset_to_gpu_loader.first_loaded_event.wait()
@@ -153,7 +153,7 @@ def train_model():
     model = Model()
 
     print("MODEL LOADED\n" * 10)
-    model = torch.load("results/some_model.pt", map_location=torch.device('cuda:0'))
+    model = torch.load("results big model GOOD 99 91 97/some_model.pt", map_location=torch.device('cuda:0'))
 
     print(round(count_parameters(model), 3), "Mb of parameters")
     import importlib
@@ -192,8 +192,6 @@ def train_model():
                         # },
                     })
     def additional_test_loss(y_real, y_pred, is_infected, epoch):
-
-
         def add_conf_matrix(name, y_real, y_pred):
             _, y_pred_tags = torch.max(y_pred, dim = 1)
             _, y_real_tags = torch.max(y_real, dim = 1)
