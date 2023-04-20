@@ -13,4 +13,6 @@ lib/run_big/*
 cache/*
 lib/dist*
 lib/lib.egg-info*
+app-web/static/js/*.js
+app-web/static/js/*.map
 .cache

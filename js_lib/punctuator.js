@@ -13,7 +13,7 @@ const ort = function() {
 }();
 
 
-const session_promise = ort.InferenceSession.create(file); //, 0, file.byteLength,  { executionProviders: ['cpu'] });
+const session_promise = ort.InferenceSession.create(file, { executionProviders: ['cpu'] }); //, 0, file.byteLength,  { executionProviders: ['cpu'] });
 
 module.exports.getPunctuation = async (text) => {
   assert.typeOf(text, 'string');
@@ -25,7 +25,8 @@ module.exports.getPunctuation = async (text) => {
   console.log(x);
   const tensor = new ort.Tensor('float32', x, [1 , 32, 489]);
   const session = await session_promise;
-  const output = (await session.run({input: tensor})).output;
+  const prom = session.run({input: tensor});
+  const output = (await prom).output;
   assert.deepStrictEqual(output.dims, [1, 3]);
 
 
