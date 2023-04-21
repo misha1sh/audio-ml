@@ -47,10 +47,10 @@ async def download_file(file, url):
     return file_path
 
 navec_path = await download_file('hudlit_12B_500K_300d_100q.tar',
-        "http://localhost:3000/hudlit_12B_500K_300d_100q.tar")
+        "/hudlit_12B_500K_300d_100q.tar")
 navec = Navec.load(navec_path)
 
-response = await pyfetch("http://localhost:3000/params.pickle")
+response = await pyfetch("/params.pickle")
 params = pickle.loads(await response.bytes())
 
 NUMPY_DTYPE = float

@@ -60,10 +60,10 @@ import {ref} from 'vue'
 import { InferenceSession, env, Tensor } from 'onnxruntime-web';
 
 env.wasm.wasmPaths = {
-  'ort-wasm.wasm': "http://localhost:3000/js/ort-wasm.wasm",
-  'ort-wasm-threaded.wasm':  "http://localhost:3000/js/ort-wasm-threaded.wasm",
-  'ort-wasm-simd.wasm':  "http://localhost:3000/js/ort-wasm-simd.wasm",
-  'ort-wasm-simd-threaded.wasm':  "http://localhost:3000/js/ort-wasm-simd-threaded.wasm",
+  'ort-wasm.wasm': "/js/ort-wasm.wasm",
+  'ort-wasm-threaded.wasm':  "/js/ort-wasm-threaded.wasm",
+  'ort-wasm-simd.wasm':  "/js/ort-wasm-simd.wasm",
+  'ort-wasm-simd-threaded.wasm':  "/js/ort-wasm-simd-threaded.wasm",
 }
 // const model = require("../assets/model.onnx")
 import buffer from "../assets/model.onnx";
@@ -74,7 +74,7 @@ import { diffChars } from 'diff'
 
 import { loadPyodide } from 'pyodide'
 const pyodide_promise = loadPyodide({
-    indexURL: "http://localhost:3000/pyodide/",
+    indexURL: "/pyodide/",
   });
 
 
