@@ -3,6 +3,9 @@ const CopyPlugin = require("copy-webpack-plugin");
 
 module.exports = defineConfig({
   transpileDependencies: true,
+  devServer: {
+    liveReload: false
+  },
   configureWebpack: {
     module: {
       rules: [{ test: /\.onnx$/, use: 'arraybuffer-loader' },

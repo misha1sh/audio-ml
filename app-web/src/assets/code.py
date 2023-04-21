@@ -7,17 +7,22 @@ micropip.add_mock_package("docopt", "0.6.2", modules = {
         docopt = 1
     """
 })
-await micropip.install("pymorphy3")
-await micropip.install("numpy")
+
+for i in "pymorphy3 numpy navec setuptools razdel".split():
+    await micropip.install(i)
+# await micropip.install("")/
 # await micropip.install("sacremoses")
-await micropip.install("navec")
-await micropip.install("setuptools")
+# await micropip.install("")
+# await micropip.install("")
+# await micropip.install("")
 
 import numpy as np
 import random
 import pymorphy3
 import numpy as np
 import math
+import pickle
+from razdel import tokenize
 
 NO_PUNCT = 0
 from navec import Navec
@@ -45,8 +50,8 @@ navec_path = await download_file('hudlit_12B_500K_300d_100q.tar',
         "http://localhost:3000/hudlit_12B_500K_300d_100q.tar")
 navec = Navec.load(navec_path)
 
-params_path = await download_file('params.dill',
-                        "http://localhost:3000/params.dill")
+response = await pyfetch("http://localhost:3000/params.pickle")
+params = pickle.loads(await response.bytes())
 
 NUMPY_DTYPE = float
 NAVEC_UNK = navec['<unk>']
@@ -131,16 +136,12 @@ def calculate_word_features_for_tokens(input, params):
     return np.stack(input)
 
 
-def onnx_model_runner(path):
-    ort_sess = ort.InferenceSession(path)
-    def func(input):
-        return ort_sess.run(None, {'input': np.array(input) })[0]
-    return func
 
 async def infer(text):
     assert params["RETAIN_LEFT_PUNCT"] #
 
-    unpadded_tokens = text.split(' ')
+    #unpadded_tokens = text.split(' ')
+    unpadded_tokens = list(map(lambda i: i.text, tokenize(text)))
     unpadded_tokens = list(filter(lambda x: len(x) > 0, unpadded_tokens))
     tokens = [PAD_TOKEN] * params['INPUT_WORDS_CNT_LEFT'] + unpadded_tokens + [PAD_TOKEN] * (params["INPUT_WORDS_CNT_RIGHT"] + 1)
     features = calculate_word_features_for_tokens(tokens, params)
@@ -158,28 +159,66 @@ async def infer(text):
 
         features_for_batch = features[i - params['INPUT_WORDS_CNT_LEFT']: i + params['INPUT_WORDS_CNT_RIGHT']]
         features_for_batch = np.stack((features_for_batch, ))
-        output_probs = await jsinfer.infer(features_for_batch)
-        break
-        punct_idx = np.argmax(output_probs).item()
+        arr = np.ascontiguousarray(features_for_batch, dtype=np.float32)
+        output_probas = np.array((await jsinfer.infer(arr)).to_py())
+        punct_idx = np.argmax(output_probas).item()
         punct = params["ID_TO_PUNCTUATION"][punct_idx]
 
-        # print(punct)
+        #tokens_for_batch_copy[params['INPUT_WORDS_CNT_LEFT']] =  f'<{tokens[i-1], punct, tokens[i]}>'
+        tokens_for_batch_copy[params['INPUT_WORDS_CNT_LEFT']] =  f'<{punct}>'
+        print(" ".join(tokens_for_batch_copy))
 
+        # print(punct)
         # punct = '.'
 
-        if punct != '$empty':
-            res += punct
+        def add_i_token_to_res(i):
+            nonlocal res
             if tokens[i] != 'PAD':
-                res += " " + tokens[i]
+                if tokens[i] in '.,:!?':
+                    res += tokens[i]
+                else:
+                    res += " " + tokens[i]
+
+        def insert_punct(punct):
+            nonlocal features
             tokens.insert(i, punct)
-            features = torch.cat((features[:i],
-                    torch.stack((get_word_features(punct, params), )),
+            features = np.concatenate((features[:i],
+                    np.stack((get_word_features(punct, params), )),
                     features[i:]), 0)
-            i += 2
+
+        def replace_i_token_punct(punct):
+            nonlocal features
+            tokens[i] = punct
+            features[i] = get_word_features(punct, params)
+
+        def erase_i_token_punct():
+            nonlocal features
+            del tokens[i]
+            features = np.concatenate((features[:i], features[i + 1:]), 0)
+
+        if tokens[i] in '.,!?':
+            if tokens[i] == punct or tokens[i] in "!?":# and punct in "."):
+                add_i_token_to_res(i)
+                add_i_token_to_res(i + 1)
+                i += 2
+            else:
+                if punct != "$empty":
+                    res += punct
+                    replace_i_token_punct(punct)
+                    i += 2
+                else:
+                    # res += " "
+                    erase_i_token_punct()
+                    # i += 0
+
         else:
-            if tokens[i] != 'PAD':
-                res += " " + tokens[i]
-            i += 1
+            if punct != "$empty":
+                res += punct #"{ins: " + punct + "`" + tokens[i] + "`}"
+                add_i_token_to_res(i)
+                insert_punct(punct)
+                i += 2
+            else:
+                add_i_token_to_res(i)
+                i += 1
 
     return res.strip()
-

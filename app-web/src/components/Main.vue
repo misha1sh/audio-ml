@@ -7,30 +7,50 @@
       placeholder="Исходный текст:"
       clearable
       :autosize="{
-        minRows: 4
+        minRows: 5,
+        maxRows: 20
       }"
+      style="font-size:1.2em"
     />
-    <n-button
+    <n-space align="center">
+      <n-button
+        type="info"
+        @click="handleInput"
+        :disabled="showLoadingBar">Раставить пунктуацию</n-button>
+        <n-button
       type="info"
-      @click="handleInput"
-      :disabled="showLoadingBar">Обработать</n-button>
+        @click="clearPunctuation"
+        :disabled="input.length == 0">
+        Очистить пунктуацию из исходного текста</n-button>
 
+    <n-checkbox v-model:checked="show_diff" :disabled="results_diff.length == 0 || showLoadingBar">
+      Показывать разницу с исходным текстом
+    </n-checkbox>
+
+    </n-space>
     <h1>Результаты: </h1>
 
     <n-spin :show="showLoadingBar">
-      <n-card  style="white-space: pre;">
-        {{ results }}
+      <n-card>
+        <div v-if="show_diff" style="font-size:1.2em">
+          <div v-for="[index, part] in results_diff.entries()" :key="index" style="display: inline;">
+            <div v-if="part.added" style="background-color:#8aff8a; display: inline; white-space: pre-wrap">{{part.value}}</div>
+            <div v-if="part.removed" style="background-color:#ffcfcf; display: inline; white-space: pre-wrap">{{part.value}}</div>
+            <div v-if="!part.added && !part.removed" style="display: inline; white-space: pre-wrap">{{part.value}}</div>
+          </div>
+        </div>
+        <div v-else style="font-size:1.2em; white-space: pre-wrap">{{results}}</div>
       </n-card>
 
       <template #description>
-        Loading python scripts
+        Загрузка
       </template>
     </n-spin>
   </div>
 </template>
 
 <script setup>
-  import { NCard, NInput, NButton, NSpin } from 'naive-ui'
+  import { NCard, NInput, NButton, NSpin, NSpace, NCheckbox } from 'naive-ui'
 </script>
 
 <script>
@@ -50,12 +70,12 @@ import buffer from "../assets/model.onnx";
 const session_promise = InferenceSession.create(buffer,
     { executionProviders: ['wasm'] });
 
+import { diffChars } from 'diff'
 
 import { loadPyodide } from 'pyodide'
 const pyodide_promise = loadPyodide({
     indexURL: "http://localhost:3000/pyodide/",
   });
-
 
 
 import code from '../assets/code.py'
@@ -66,30 +86,35 @@ export default {
   data() {
     return {
       input: "",
-      results: "\n\n\n\n",
-      showLoadingBar: ref(true)
+      results: "",
+      results_diff: [],
+      showLoadingBar: ref(true),
+      show_diff: ref(true)
     }
   },
   created() {
+    console.log("CREATED")
     async function run() {
+      console.log("RUN")
       const pyodide = await pyodide_promise;
       await pyodide.loadPackage("micropip")
       const session = await session_promise;
 
       async function infer(float32_array) {
-        console.log(float32_array)
-        const tensor = new Tensor('float32', float32_array, [1 , 32, 489]);
+        const buf = float32_array.getBuffer("f32")
+
+        const tensor = new Tensor('float32', buf.data, [1 , 32, 489]);
         const prom = session.run({input: tensor});
-        return (await prom).output;
+        const output = (await prom).output;
+        return Array.from(output.data)
       }
 
       await pyodide.registerJsModule("jsinfer", {
         "infer": infer
       })
-      console.log(await pyodide.runPythonAsync(code))
-      console.log(await pyodide.runPythonAsync("infer()", locals={
-        text: "Тест.",
-      }))
+      // console.log(await pyodide.runPythonAsync(code))
+      pyodide.globals.set('text', 'Тест.')
+      console.log(await pyodide.runPythonAsync(code + "\nawait infer(text)"))
     }
     run().then(() => {
       this.showLoadingBar = false;
@@ -101,21 +126,22 @@ export default {
   },
   methods: {
     async handleInput() {
-      this.results = this.input;
+      this.showLoadingBar = true;
+
+      const inp = this.input;
+
+      const pyodide = await pyodide_promise;
+      pyodide.globals.set('text', inp)
+      const res = await pyodide.runPythonAsync(code + "\nawait infer(text)")
+
+      this.results = res;
+      this.results_diff = diffChars(inp, res);
+
       this.showLoadingBar = false;
-
-      // let x = new Float32Array(32 * 489);
-      // for (let i = 0; i < x.length; i++) {
-      //   x[i] = 1;
-      // }
-
-      // console.log(output)
-
-      // const pyodide = await pyodide_promise;
-      // await pyodide.loadPackage("micropip")
-      // console.log(await pyodide.runPythonAsync(code))
-
-    }
+    },
+    clearPunctuation() {
+      this.input = this.input.replaceAll('.', '').replaceAll(',', '');
+    },
   }
 }
 </script>

@@ -12,6 +12,7 @@
     "chai": "^4.3.7",
     "copy-webpack-plugin": "^11.0.0",
     "core-js": "^3.8.3",
+    "diff": "^5.1.0",
     "naive-ui": "^2.34.3",
     "onnxruntime-web": "^1.14.0",
     "pyodide": "^0.23.1",
