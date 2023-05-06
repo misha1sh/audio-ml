@@ -1,3 +1,5 @@
+from collections import deque
+
 class Stream:
     def __init__(self, generator):
         try:
@@ -11,6 +13,29 @@ class Stream:
     def __next__(self):
         return next(self.generator)
 
+    @staticmethod
+    def repeat(element, n):
+        def generator():
+          for i in range(n):
+              yield element
+        return Stream(generator())
+
+    def chain(self, another_stream):
+        def generator():
+            for i in self:
+                yield i
+            for i in another_stream:
+                yield i
+        return Stream(generator())
+
+    def slide_window(self, window_size):
+        res = deque()
+        for i in self:
+          res.append(i)
+          if len(res) == window_size:
+            yield Stream(res)
+            res.popleft()
+
     def skip(self, count):
         def generator():
             n = count
@@ -19,7 +44,6 @@ class Stream:
                 if n == 0: break
             for i in self.generator:
                 yield i
-
         return Stream(generator())
 
     def get(self, count):
@@ -28,6 +52,7 @@ class Stream:
             res.append(i)
             if len(res) == count:
                 return res
+        return res
 
     def limit(self, count):
         def generator():
