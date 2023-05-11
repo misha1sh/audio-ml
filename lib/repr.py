@@ -10,22 +10,6 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 
-shutil.rmtree("./runs")
-
-writer = SummaryWriter()
-torch.cuda.is_available(), torch.rand(1).to('cuda:0')
-
-print("max_kept_in_memory=2\n" * 5)
-from async_dataset_reader2 import AsyncDatasetReader, AsyncDatasetLoaderToGPU
-dataset_mem_reader = AsyncDatasetReader(path="cache2/storage2", max_kept_in_memory=30, writer=writer)
-dataset_to_gpu_loader = AsyncDatasetLoaderToGPU(dataset_mem_reader, max_kept_in_memory=5,
-                                                test_samples_count=20000, writer=writer)
-
-dataset_to_gpu_loader.first_loaded_event.wait()
-params = dataset_mem_reader.params
-
-
-
 # class EarlyStopper:
 #     def __init__(self, patience=20, min_delta=0.01):
 #         self.patience = patience
@@ -45,55 +29,71 @@ params = dataset_mem_reader.params
 
 
 
-
 from xformers.factory import xFormerEncoderBlock, xFormerEncoderConfig
-N_words = params["INPUT_WORDS_CNT"]
-# N_variants = params["VARIANTS_CNT"]
-N_features = params["TOTAL_WORD_FEATURES_CNT"]
 
-INTERNAL_EMBEDDING_SIZE = 256
-INTERNAL_EMBEDDING_SIZE2 = 32
-
-
-print("INTERNAL_EMBEDDING_SIZE, num_heads\n" * 10)
-encoder_configs = [{
-    "dim_model": INTERNAL_EMBEDDING_SIZE, #N_variants * N_features,
-    "residual_norm_style": "pre",  # Optional, pre/post
-    "position_encoding_config": {
-        "name": "sine",  #sine
-        # "dim_model": VARIANTS_CNT * N_features,
-    },
-    "multi_head_config": {
-        "num_heads": 8,
-        "residual_dropout": 0.,
-        "attention": {
-            "name": "scaled_dot_product", #linformer scaled_dot_product fourier_mix, "linformer" scaled_dot_product,  # whatever attention mechanism
-            "dropout": 0., # linformer
-            "seq_len": N_words, # linformer, scaled_dot_product
-            "to_seq_len": N_words, # scaled_dot_product
-        },
-    },
-    "feedforward_config": {
-        "name": "MLP",
-        "dropout": 0.,
-        "activation": activation,
-        "hidden_layer_multiplier": 1,
-    },
-} for activation in ("relu", "relu", "relu", "relu")]
+def suggest_xformer_encoder(params, model_params, trial):
+  INTERNAL_EMBEDDING_SIZE = model_params["INTERNAL_EMBEDDING_SIZE"] # 256
+  # INTERNAL_EMBEDDING_SIZE2 = 32
+  N_words = params['INPUT_WORDS_CNT']
 
 
-class LSTM(nn.Module):
-    def __init__(self, **kwargs):
-        super().__init__()
+  #print("INTERNAL_EMBEDDING_SIZE, num_heads\n" * 10)
+  encoder_configs = [{
+      "dim_model": INTERNAL_EMBEDDING_SIZE, #N_variants * N_features,
+      # Optional, pre/post
+      "residual_norm_style": trial.suggest_categorical("encoder_residual_norm_style", ["pre", "post"]),
+      "position_encoding_config": {
+          "name": "sine",  #sine
+          # "dim_model": VARIANTS_CNT * N_features,
+      },
+      "multi_head_config": {
+          "num_heads": trial.suggest_categorical("encoder_num_heads", [8, 4]),
+          "residual_dropout": 0.,
+          "attention": {
+              "name": "scaled_dot_product", #linformer scaled_dot_product fourier_mix, "linformer" scaled_dot_product,  # whatever attention mechanism
+              "dropout": 0., # linformer
+              "seq_len": N_words, # linformer, scaled_dot_product
+              "to_seq_len": N_words, # scaled_dot_product
+          },
+      },
+      "feedforward_config": {
+          "name": "MLP",
+          "dropout": 0.,
+          "activation": activation,
+          "hidden_layer_multiplier": 1,
+      },
+  } for activation in ("relu", "relu", "relu", "relu")]
 
-        self.lstm = nn.LSTM(INTERNAL_EMBEDDING_SIZE2, INTERNAL_EMBEDDING_SIZE2 // 2,
-                            num_layers=1, batch_first=True, bidirectional=True)
-    def forward(self, x):
-        return self.lstm(x)[0]
+  return encoder_configs
+
+
 
 class Model(nn.Module):
-    def __init__(self, **kwargs):
+    class LSTM(nn.Module):
+        def __init__(self, model_params, trial, **kwargs):
+            super().__init__()
+
+            self.lstm = nn.LSTM(model_params["INTERNAL_EMBEDDING_SIZE2"],
+                                model_params["INTERNAL_EMBEDDING_SIZE2"] // 2,
+                                num_layers=model_params["lstm_layers"],
+                                batch_first=True, bidirectional=True)
+        def forward(self, x):
+            return self.lstm(x)[0]
+
+    def __init__(self, params, trial, **kwargs):
         super().__init__()
+
+        model_params = {}
+        INTERNAL_EMBEDDING_SIZE = model_params["INTERNAL_EMBEDDING_SIZE"] = \
+          trial.suggest_categorical("INTERNAL_EMBEDDING_SIZE", [256, 128])# 256
+        INTERNAL_EMBEDDING_SIZE2 = model_params["INTERNAL_EMBEDDING_SIZE2"] = \
+          trial.suggest_categorical("INTERNAL_EMBEDDING_SIZE2", [32, 16])# 256
+
+        model_params["lstm_layers"] = trial.suggest_int("lstm_layers", 1, 0, 3)
+
+        encoder_configs = suggest_xformer_encoder(params, model_params, trial)
+
+
         N_words = params['INPUT_WORDS_CNT']
         # N_variants = params['VARIANTS_CNT']
         N_features = params['TOTAL_WORD_FEATURES_CNT']
@@ -101,30 +101,38 @@ class Model(nn.Module):
         # input is (N, N_words, N_features)
         # output is (N, N_words, )
 
-        self.model = nn.Sequential(
+
+
+        self.model = nn.Sequential(*[
             # nn.Flatten(2),
             # (N, N_words, N_features + ...)
             # nn.TransformerEncoder(encoder_layer, num_layers=1),encoder =
             nn.Linear(N_features, INTERNAL_EMBEDDING_SIZE),
             nn.BatchNorm1d(N_words),
             nn.ReLU(),
-
+          ] +
+          [
+            nn.Linear(INTERNAL_EMBEDDING_SIZE, INTERNAL_EMBEDDING_SIZE),
+            nn.BatchNorm1d(N_words),
+            nn.ReLU(),
+          ] * trial.suggest_int("pre_linear_count", 0, 0, 2) +
+          [
             # (N, N_words, INTERNAL_EMBEDDING_SIZE)
-            xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[0])),
-            xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[1])),
-            xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[1])),
-            # xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[1])),
-
+            xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[i]))
+            for i in range(0, trial.suggest_int("encoder_count", 3, 1, 3))
+          ]  +
+          [
             nn.BatchNorm1d(N_words),
             nn.Linear(INTERNAL_EMBEDDING_SIZE, INTERNAL_EMBEDDING_SIZE2),
             nn.BatchNorm1d(N_words),
             nn.ReLU(),
-            LSTM(),
+          ] +
+          ([
+            Model.LSTM(model_params, trial),
             nn.BatchNorm1d(N_words),
-
-            # xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[2])),
-            # xFormerEncoderBlock(xFormerEncoderConfig(**encoder_configs[3])),
-
+          ] if model_params["lstm_layers"] > 0 else [])
+          +
+          [
             nn.Flatten(1), # (N, N_words* INTERNAL_EMBEDDING_SIZE)
             #(N, N_words, INTERNAL_EMBEDDING_SIZE)
 
@@ -136,7 +144,7 @@ class Model(nn.Module):
             # nn.Tanhshrink(),
             # nn.Sigmoid(),
             # nn.ReLU(),
-        )
+        ])
 
 
     def forward(self, x):
@@ -148,12 +156,22 @@ class Model(nn.Module):
     # return (param_size + buffer_size) / 1024**2
 
 
-aa = {}
-def train_model():
-    model = Model()
+def train_model(model, epochs, opt, lr, path, **kwargs):
+    shutil.rmtree("./runs")
+    writer = SummaryWriter()
 
-    print("MODEL LOADED\n" * 10)
-    model = torch.load("results big model GOOD 99 91 97/some_model.pt", map_location=torch.device('cuda:0'))
+    from async_dataset_reader2 import AsyncDatasetReader, AsyncDatasetLoaderToGPU
+    dataset_mem_reader = AsyncDatasetReader(path=path, max_kept_in_memory=30, writer=writer)
+    dataset_to_gpu_loader = AsyncDatasetLoaderToGPU(dataset_mem_reader, max_kept_in_memory=5,
+                                                    test_samples_count=20000, writer=writer)
+
+    dataset_to_gpu_loader.first_loaded_event.wait()
+    params = dataset_mem_reader.params
+
+
+
+    assert torch.cuda.is_available()
+    torch.rand(1).to('cuda:0')
 
     print(round(count_parameters(model), 3), "Mb of parameters")
     import importlib
@@ -163,20 +181,24 @@ def train_model():
 
     # model = torch.compile(model)
     import torch_optimizer as optim
-    # optimizer = optim.PID(model.parameters(),
-    #                       lr=0.01,
-    #                       weight_decay=1e-2)
-
-    # optimizer = optim.Yogi(model.parameters(),
-    #                     lr=0.0001)
-
-    optimizer = torch.optim.RAdam(model.parameters(),
-                            lr=0.001)
 
 
-    # optimizer = torch.optim.Adam(model.parameters(),
-    #                         lr=0.0005)
-                            # betas=(0.5, 0.999))
+    if opt == "PID":
+      optimizer = optim.PID(model.parameters(),
+                            lr=lr,
+                            weight_decay=1e-2)
+    elif opt == "Yogi":
+      optimizer = optim.Yogi(model.parameters(),
+                            lr=lr)
+    elif opt == "RAdam":
+      optimizer = torch.optim.RAdam(model.parameters(),
+                              lr=lr)
+    elif opt == "Adam":
+      optimizer = torch.optim.Adam(model.parameters(),
+                            lr=lr,
+                            betas=(0.5, 0.999))
+    else:
+      raise Exception("Invalid optimizer")
 
     trainer = Trainer(model=model,
                     # enable_chunking=True,
@@ -243,21 +265,38 @@ def train_model():
     # trainer.early_stop_lambda = early_stopper.early_stop
     trainer.set_data(dataset_to_gpu_loader)
     try:
-        trainer.train(40000, trial=None, log=True, writer=writer) # , chunk_size=680000,
+        trainer.train(epochs, trial=None, log=True, writer=writer, **kwargs) # , chunk_size=680000,
     except KeyboardInterrupt:
         print("interrupted")
         # type, val, tb = sys.exc_info()
         # traceback.clear_frames(tb)
         pass
     # trainer.plot_history(cutoff=0)
+
+    dataset_to_gpu_loader.stop()
+    dataset_mem_reader.stop()
     return trainer
-import os
-# os.environ["CUDA_HOME"] = "/home/misha-sh/cuda"
 
-trainer = train_model()
-# run_proc(train_model)
-print("exit")
 
-import sys
-sys.exit(0)
+if __name__ == "__main__":
+  import tuner
+  path = "cache2/storage2"
+  storage = Storage(path)
+  params = storage.wait_meta_change("params", None)
+  # trial = tuner.TunedParams({})
+  trial = tuner.load_best("writers_tune_24")
+  model = Model(params, trial)
+
+  # print("MODEL LOADED\n" * 10)
+  # model = torch.load("results big model GOOD 99 91 97/some_model.pt", map_location=torch.device('cuda:0'))
+
+  import os
+  # os.environ["CUDA_HOME"] = "/home/misha-sh/cuda"
+
+  trainer = train_model(model, 40000, "RAdam", 0.01, path)
+  # run_proc(train_model)
+  print("exit")
+
+  import sys
+  sys.exit(0)
 

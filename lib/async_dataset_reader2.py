@@ -4,6 +4,8 @@ from storage import Storage
 import threading
 import time
 
+LOG = False
+
 @dataclass
 class DatasetChunk:
     i: int
@@ -25,6 +27,8 @@ class AsyncDatasetLoaderToGPU:
         self.async_dataset_reader = async_dataset_reader
         self.time_counter = 0
 
+        self.keep_running = True
+
         self.max_kept_in_memory = max_kept_in_memory
         self.lock = threading.Lock()
         self.first_loaded_event = threading.Event()
@@ -41,15 +45,18 @@ class AsyncDatasetLoaderToGPU:
 
 
 
-        print("[gpu] loading test")
+        if LOG: print("[gpu] loading test")
         self.x_test = async_dataset_reader.storage.get_meta("x_test").float().cuda()
         self.y_test = async_dataset_reader.storage.get_meta("y_test").float().cuda()
         self.text_res_test = async_dataset_reader.storage.get_meta("text_res_test")
         self.is_infected_test = async_dataset_reader.storage.get_meta("is_infected_test")
-        print("[gpu] test loaded", self.x_test.shape)
+        if LOG: print("[gpu] test loaded", self.x_test.shape)
 
         async_dataset_to_gpu_loader_thread = threading.Thread(target=self.read_infinitely)
         async_dataset_to_gpu_loader_thread.start()
+
+    def stop(self):
+        self.keep_running = False
 
     def wait_for_first_chunk(self):
         self.async_dataset_reader.first_loaded_event.wait()
@@ -71,7 +78,7 @@ class AsyncDatasetLoaderToGPU:
 
         self.chunks_count = self.async_dataset_reader.chunks_count
         if self.count_in_memory() == self.chunks_count:
-            print("[gpu] loaded all into memory")
+            if LOG: print("[gpu] loaded all into memory")
             # wait till next chunk is written
             self.storage.wait_meta_change("chunks_count", self.chunks_count)
             return
@@ -89,7 +96,7 @@ class AsyncDatasetLoaderToGPU:
                     del y
                     chunk_to_remove.in_memory = False
                     chunk_to_remove.used = 0
-                    print("[gpu] removed ", chunk_to_remove.i)
+                    if LOG: print("[gpu] removed ", chunk_to_remove.i)
                 else:
                     time.sleep(0.2)
                     return
@@ -97,12 +104,12 @@ class AsyncDatasetLoaderToGPU:
             set(map(lambda chunk: chunk.i,
                 filter(lambda chunk: chunk.in_memory, self.chunks))))
         if res is None:
-            print("[gpu] loaded all into memory(2)")
+            if LOG: print("[gpu] loaded all into memory(2)")
             time.sleep(0.2)
             return
 
         chunk_i, x, y = res
-        print(f"[gpu] reading {chunk_i}")
+        if LOG: print(f"[gpu] reading {chunk_i}")
 
         for i in range(len(self.chunks), chunk_i + 1):
             self.chunks.append(DatasetChunk(i=i, x=None, y=None,
@@ -137,13 +144,13 @@ class AsyncDatasetLoaderToGPU:
         with self.lock:
             candidate.in_memory = True
             candidate.used = 0
-        print(f"[gpu] read {chunk_i}")
+        if LOG: print(f"[gpu] read {chunk_i}")
         self.first_loaded_event.set()
         self.loaded_event.set()
 
     def read_infinitely(self):
         self.wait_for_first_chunk()
-        while True:
+        while self.keep_running:
             self.read_next()
 
     def iter_train_batches(self, epoch):
@@ -155,7 +162,7 @@ class AsyncDatasetLoaderToGPU:
                 candidate = self.find_candidates(in_memory=True)[0]
                 if candidate.used <= 2: break
             self.loaded_event.wait()
-            print("[gpu] WAITED BECAUSE OF OVERUSE")
+            if LOG: print("[gpu] WAITED BECAUSE OF OVERUSE")
             waited += 1
 
         self.writer.add_scalar('GPU/Wait because of overuse', waited, epoch)
@@ -163,7 +170,7 @@ class AsyncDatasetLoaderToGPU:
 
         with self.lock:
             candidate = self.find_candidates(in_memory=True)[0]
-            print("[gpu] iter", candidate.i)
+            if LOG: print("[gpu] iter", candidate.i)
             x_train_chunk = candidate.x#.to(self.device, dtype=torch.float32, non_blocking=True)
             y_train_chunk = candidate.y#.to(self.device, dtype=torch.float32, non_blocking=True)
 
@@ -196,6 +203,7 @@ class AsyncDatasetReader:
 
         assert max_kept_in_memory > 1
 
+        self.keep_running = True
         self.storage = Storage(path)
         self.time_counter = 0
 
@@ -211,6 +219,9 @@ class AsyncDatasetReader:
 
         async_dataset_reader_thread = threading.Thread(target=self.read_infinitely)
         async_dataset_reader_thread.start()
+
+    def stop(self):
+        self.keep_running = False
 
     def wait_for_first_chunk(self):
         self.params = self.storage.wait_meta_change("params", None)
@@ -242,7 +253,7 @@ class AsyncDatasetReader:
 
 
         if self.count_in_memory() == self.chunks_count:
-            print("loaded all into memory")
+            if LOG: print("loaded all into memory")
             # wait till next chunk is written
             self.storage.wait_meta_change("chunks_count", self.chunks_count)
             return
@@ -258,14 +269,14 @@ class AsyncDatasetReader:
                     del y
                     chunk_to_remove.in_memory = False
                     chunk_to_remove.used += 1
-                    print("removed ", chunk_to_remove.i)
+                    if LOG: print("removed ", chunk_to_remove.i)
             else:
                 time.sleep(0.2)
                 return
 
         candidate = self.find_candidates(in_memory=False)[0]
         i = candidate.i
-        print(f"reading {i} (last_read={candidate.last_read})")
+        if LOG: print(f"reading {i} (last_read={candidate.last_read})")
         candidate.x = self.storage.get("x", i).to(dtype=torch.float32).pin_memory()
         #.to(self.device) #, map_location=device)
         candidate.y = self.storage.get("y", i).to(dtype=torch.float32).pin_memory()
@@ -273,12 +284,12 @@ class AsyncDatasetReader:
         with self.lock:
             candidate.in_memory = True
             candidate.used = 0
-        print(f"read {i}")
+        if LOG: print(f"read {i}")
         self.first_loaded_event.set()
 
     def read_infinitely(self):
         self.wait_for_first_chunk()
-        while True:
+        while self.keep_running:
             self.read_next()
 
     def get_chunk_on_gpu(self, chunks_to_ignore):
@@ -294,7 +305,7 @@ class AsyncDatasetReader:
                 return None
 
             i = candidate.i
-            print("iter", candidate.i)
+            if LOG: print("iter", candidate.i)
             try:
                 x_train_chunk = candidate.x.to(self.device, non_blocking=True) #, dtype=torch.float32, non_blocking=True)
                 y_train_chunk = candidate.y.to(self.device, non_blocking=True) #, dtype=torch.float32, non_blocking=True)

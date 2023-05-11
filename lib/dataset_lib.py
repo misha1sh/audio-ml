@@ -39,20 +39,25 @@ def read_writers():
     with zipfile.ZipFile(writers_zip_path, 'r') as writers_dir:
         for file in writers_dir.filelist:
             f = file.filename
-            good_file = ('prose' in f or 'publicism' in f) and 'txt' in f and 'Tolstoy' in f
+            good_file = ('prose' in f or 'publicism' in f) and 'txt' in f and 'Blok' not in f # and 'Tolstoy' in f
             if not good_file: continue
             with writers_dir.open(f) as file_open:
                 res.append(file_open.read().decode())
     return res
 
-def get_writers_records():
-    with zipfile.ZipFile(writers_zip_path, 'r') as writers_dir:
-        for file in writers_dir.filelist:
-            f = file.filename
-            good_file = ('prose' in f or 'publicism' in f) and 'txt' in f and 'Blok' not in f # and 'Tolstoy' in f
-            if not good_file: continue
-            with writers_dir.open(f) as file_open:
-                yield file_open.read().decode()
+# def get_writers_file_streams():
+#     streams = []
+#     with zipfile.ZipFile(writers_zip_path, 'r') as writers_dir:
+#         for file in writers_dir.filelist:
+#             f = file.filename
+#             good_file = ('prose' in f or 'publicism' in f) and 'txt' in f and 'Blok' not in f # and 'Tolstoy' in f
+#             if not good_file: continue
+#             streams.append(writers_dir.open(f))
+
+#             # TODO: support file closing
+#             # with writers_dir.open(f) as file_open:
+#                 # streams
+#                 # yield file_open.read().decode()
 
 def split_into_parts(text):
     part = ""
@@ -67,9 +72,16 @@ def split_into_parts(text):
     if part != "":
         yield part
 
-def get_writers_records_stream():
-    stream = Stream(get_writers_records())
-    return stream.starmap(split_into_parts)
+def get_writers_multi_stream():
+    data = read_writers()
+    sizes = [len(i) for i in data]
+    streams = [Stream(split_into_parts(i)).buffered_mix(1024) for i in data]
+    return Stream.mix_streams(streams, sizes)
+
+
+# def get_writers_records_stream():
+#     stream = Stream(get_writers_records())
+#     return stream.starmap(split_into_parts)
 
 def get_nerus_records():
     return load_nerus(nerus_file)

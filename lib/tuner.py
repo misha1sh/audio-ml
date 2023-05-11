@@ -46,9 +46,16 @@ class TunedParams:
     def set_user_attr(self, *args, **kwargs): pass
     def should_prune(self): return False
 
-def tune(objective, n_trials, timeout):
+storage_path = "sqlite:///tune/opt.db"
+
+def load_best(name):
+    study = optuna.load_study(study_name=name, storage=storage_path)
+    trial = study.best_trial
+    return TunedParams(trial.params)
+
+def tune(name, objective, n_trials, timeout):
     sampler = optuna.samplers.TPESampler()
-    study = optuna.create_study(sampler=sampler, direction="minimize", storage="sqlite:///opt.db") #, pruner=pruner)
+    study = optuna.create_study(study_name=name, sampler=sampler, direction="minimize", storage=storage_path) #, pruner=pruner)
 
     def wrapped_objective(trial):
         return objective(TrialWrapper(trial))
@@ -70,3 +77,5 @@ def tune(objective, n_trials, timeout):
         print("    {}: {}".format(key, value))
 
     return TunedParams(study.best_trial.params)
+
+

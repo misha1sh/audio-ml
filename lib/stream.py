@@ -1,4 +1,28 @@
 from collections import deque
+import random
+
+#https://stackoverflow.com/a/15993515
+class ListRandom(object):
+    def __init__(self):
+        self.items = []
+
+    def add_item(self, item):
+        self.items.append(item)
+
+    def remove_item(self, position):
+        last_item = self.items.pop()
+        if position != len(self.items):
+            self.items[position] = last_item
+
+    def __len__(self):
+        return len(self.items)
+
+    def pop_random(self):
+        assert len(self.items) > 0
+        i = random.randrange(0, len(self.items))
+        element = self.items[i]
+        self.remove_item(i)
+        return element
 
 class Stream:
     def __init__(self, generator):
@@ -19,6 +43,40 @@ class Stream:
           for i in range(n):
               yield element
         return Stream(generator())
+
+    def buffered_mix(self, elements_in_buffer_count):
+        def generator():
+            buffer = ListRandom()
+            it = iter(self)
+            while True:
+                while len(buffer) < elements_in_buffer_count:
+                    try:
+                        buffer.add_item(next(it))
+                    except StopIteration:
+                        while len(buffer) > 0:
+                            yield buffer.pop_random()
+                        return
+                yield buffer.pop_random()
+        return Stream(generator())
+
+
+    @staticmethod
+    def mix_streams(streams, weights):
+        def generator():
+            iters = [iter(i) for i in streams]
+            choices = list(range(len(streams)))
+            i = 0
+            while True:
+                try:
+                    i = random.choices(choices, weights)[0]
+                    print(i, weights)
+                    yield next(iters[i])
+                except StopIteration:
+                    weights[i] = 0
+                    if sum(weights) == 0:
+                        return
+        return Stream(generator())
+
 
     def chain(self, another_stream):
         def generator():

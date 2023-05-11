@@ -1,5 +1,5 @@
-#  sudo apt install --no-install-recommends nvidia-driver-510 nvidia-dkms-510 
- 
+#  sudo apt install --no-install-recommends nvidia-driver-510 nvidia-dkms-510
+
 sudo apt install --no-install-recommends nvidia-driver-525 nvidia-dkms-525
 sudo apt install --no-install-recommends jq htop libc-dev g++ graphviz
 
@@ -10,7 +10,7 @@ micromamba create -f ./env.yaml
 mamba env update --file env.yaml
 
 
-#python3-pip htop python3-dev 
+#python3-pip htop python3-dev
 
 # pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
 sudo apt-get install gnupg
@@ -25,8 +25,11 @@ sudo systemctl start mongod
 mongosh
 
 
-# pip install tabnine-jupyterlab 
+# pip install tabnine-jupyterlab
 pip install "jedi<0.18" jupyterlab-lsp 'python-lsp-server[all]'
+
+
+optuna-dashboard --host 0.0.0.0 --port 8069 sqlite:///audio-ml/lib/tune/opt.db
 
 find ./ -name "cuda.h"
 sudo mkdir  /usr/local/cuda

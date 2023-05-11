@@ -143,7 +143,7 @@ class Trainer:
     def get_lr(self):
         return self.optimizer.param_groups[0]['lr']
 
-    def train(self, epochs, batch=None, chunk_size=None, trial=None, log=True, writer = None):
+    def train(self, epochs, batch=None, chunk_size=None, result2=None, trial=None, log=True, writer = None):
         assert (self.enable_chunking and chunk_size) or (not self.enable_chunking and not chunk_size)
 
         report_period = (epochs // 4)
@@ -215,10 +215,16 @@ class Trainer:
                 if log: print("Early stop at ", epoch, " epoch")
                 break
 
+            # if trial2 and (epoch % report_period == report_period - 1):
+            #     trial2.put((test_loss, epoch))
+
             if trial and (epoch % report_period == report_period - 1):
                 trial.report(test_loss, epoch)
                 if trial.should_prune():
                     raise optuna.TrialPruned()
+
+        if result2:
+          result2.value = test_loss
 
     def plot_history(self, cutoff=100):
         import matplotlib.pyplot as plt
