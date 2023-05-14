@@ -100,12 +100,15 @@ class EarlyStoppingPerTime:
 
 class Trainer:
     def __init__(self, model, loss, optimizer, scheduler, additional_losses,
-            sampler=NoSampler(), enable_chunking=False): # calc_loss_on_data
+            warmup_scheduler=None, sampler=NoSampler(), enable_chunking=False,
+            schedule_every_minibatch=False): # calc_loss_on_data
         self.device = torch.device('cuda:0')
         self.model = model.to(self.device)
         self.loss = loss
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.schedule_every_minibatch = schedule_every_minibatch
+        self.warmup_scheduler = warmup_scheduler
         self.sampler = sampler
         # self.calc_loss_on_data = calc_loss_on_data
         self.early_stop_lambda = lambda trainer, test_loss, time_passed, log: False
@@ -114,7 +117,7 @@ class Trainer:
             "train_loss": [],
             "test_loss": [],
         }
-        self.additional_test_loss = lambda y_real, y_pred, epoch: None
+        self.additional_test_loss = lambda y_real, y_pred, is_infected, epoch: None
         self.enable_chunking = enable_chunking
         # self.history.update({i: [] for i in additional_losses})
 
@@ -151,6 +154,8 @@ class Trainer:
 
         miniepoch = 0
 
+        train_batch_len = None
+
         for epoch in range(epochs):
             self.model.train()
 
@@ -158,9 +163,15 @@ class Trainer:
             train_losses = []
             while cnt_trained < 100_000:
                 for x, y in self.dataset.iter_train_batches(miniepoch):
+                    if train_batch_len is None: train_batch_len = x.shape[0]
                     train_losses.append(self.train_batch(x, y))
                     cnt_trained += x.shape[0]
                     miniepoch += 1
+                    if self.schedule_every_minibatch and self.scheduler:
+                        self.scheduler.step()
+                        if writer:
+                            writer.add_scalar('1 Misc/Learning rate (minibatch)', get_lr(self.optimizer), miniepoch)
+                            writer.add_scalar('! Loss/train (minibatch)', train_losses[-1], miniepoch)
                 del x
                 del y
 
@@ -168,16 +179,31 @@ class Trainer:
 
             self.model.eval()
             with torch.no_grad():
-                test_loss, y_test_pred = \
-                    self.calc_loss_on_data_internal(self.dataset.x_test, #.to(self.device),
-                                                    self.dataset.y_test, True)
-                test_loss = test_loss.item()
+                test_loss = []
+                y_test_pred = []
+                for x, y in zip(torch.split(self.dataset.x_test, train_batch_len),
+                                torch.split(self.dataset.y_test, train_batch_len)):
+                    test_loss_batch, y_test_pred_batch = \
+                        self.calc_loss_on_data_internal(x, y, return_pred=True)
+                    test_loss.append(test_loss_batch.item())
+                    y_test_pred.append(y_test_pred_batch)
+                del x
+                del y
+                del y_test_pred_batch
+
+                test_loss = sum(test_loss) / len(test_loss)
+                y_test_pred = torch.cat(y_test_pred)
                 self.additional_test_loss(self.dataset.y_test, y_test_pred,
                                           self.dataset.is_infected_test, epoch)
                 del y_test_pred
 
-            if self.scheduler:
-                self.scheduler.step(test_loss)
+            # TRASH
+            if self.scheduler and not self.schedule_every_minibatch and miniepoch < epochs:
+                if self.warmup_scheduler:
+                    with self.warmup_scheduler.dampening():
+                        self.scheduler.step(test_loss)
+                else:
+                    self.scheduler.step(test_loss)
 
 
             self.history['train_loss'].append(train_loss)
@@ -203,13 +229,14 @@ class Trainer:
                         self.history[name].append(loss)
                         additional_losses += loss_name2 + ": %.4f " % loss
 
-                print('[%d/%d] [%.1f s]\t loss: %.4f loss_test: %.4f  lr: %.4f  %s\r'
-                    % (epoch, epochs, time_passed,
+                print('[%d] [%d/%d] [%.1f s]\t loss: %.4f loss_test: %.4f  lr: %.4f  %s\r'
+                    % (epoch, miniepoch, epochs, time_passed,
                         train_loss, test_loss, self.get_lr(), additional_losses))
 
-            if get_lr(self.optimizer) < 3e-5:
-                print("stopped because of low learning rate")
-                return
+            print("EARLY STOP DISABLED!!. TRASH INSTEAD OF EPOCHS!!")
+            # if get_lr(self.optimizer) < 3e-5:
+            #     print("stopped because of low learning rate")
+            #     return
 
             if self.early_stop_lambda(self, test_loss, time_passed,log):
                 if log: print("Early stop at ", epoch, " epoch")
@@ -222,6 +249,11 @@ class Trainer:
                 trial.report(test_loss, epoch)
                 if trial.should_prune():
                     raise optuna.TrialPruned()
+
+            # TRASH
+            if miniepoch > epochs:
+                if log: print("miniepoch STOP")
+                break
 
         if result2:
           result2.value = test_loss

@@ -69,7 +69,6 @@ class Stream:
             while True:
                 try:
                     i = random.choices(choices, weights)[0]
-                    print(i, weights)
                     yield next(iters[i])
                 except StopIteration:
                     weights[i] = 0

@@ -49,12 +49,19 @@ def suggest_xformer_encoder(params, model_params, trial):
       "multi_head_config": {
           "num_heads": trial.suggest_categorical("encoder_num_heads", [8, 4]),
           "residual_dropout": 0.,
-          "attention": {
-              "name": "scaled_dot_product", #linformer scaled_dot_product fourier_mix, "linformer" scaled_dot_product,  # whatever attention mechanism
-              "dropout": 0., # linformer
-              "seq_len": N_words, # linformer, scaled_dot_product
-              "to_seq_len": N_words, # scaled_dot_product
-          },
+            "attention": {
+                "seq_len": N_words, # linformer, scaled_dot_product
+                "to_seq_len": N_words, # scaled_dot_product
+              **attention
+            },
+
+        #   "attention": {
+        #       "name": "scaled_dot_product",
+        #         #linformer scaled_dot_product fourier_mix, "linformer" scaled_dot_product,  # whatever attention mechanism
+        #       "dropout": 0., # linformer
+        #       "seq_len": N_words, # linformer, scaled_dot_product
+        #       "to_seq_len": N_words, # scaled_dot_product
+        #   },
       },
       "feedforward_config": {
           "name": "MLP",
@@ -62,7 +69,26 @@ def suggest_xformer_encoder(params, model_params, trial):
           "activation": activation,
           "hidden_layer_multiplier": 1,
       },
-  } for activation in ("relu", "relu", "relu", "relu")]
+  } for activation, attention in
+    zip(['relu'] * 10, [{
+              "name": "local",
+              "dropout": 0.,
+              "window_size": 3,
+          }, {
+              "name": "local",
+              "dropout": 0.,
+              "window_size": 7,
+          }, {
+              "name": "local",
+              "dropout": 0.,
+              "window_size": 3,
+          }, {
+              "name": "scaled_dot_product",
+              "dropout": 0.,
+          }
+          ]
+
+          ) ]
 
   return encoder_configs
 
@@ -156,7 +182,65 @@ class Model(nn.Module):
     # return (param_size + buffer_size) / 1024**2
 
 
-def train_model(model, epochs, opt, lr, path, **kwargs):
+
+def get_train_params_from_trial(trial):
+    train_params = {}
+
+    opt = trial.suggest_categorical("optimizer", ['RAdam', "PID", "Yogi", 'Adam', 'Adam.amsgrad', 'Lamb'])
+    train_params['opt'] = opt
+    train_params['optimizer'] = {
+       'lr': trial.suggest_float("lr", 0.01, 0.001, 0.1, log=True)
+    }
+
+    TOTAL_STEPS = 2500
+
+    train_params['epochs'] = TOTAL_STEPS
+
+    warmup_steps = trial.suggest_int("warmup_steps", 100, 1, 300)
+    train_params['scheduler'] = {
+        'init_lr': 1e-10,
+        'peak_lr': train_params['optimizer']['lr'],
+        'final_lr': trial.suggest_float("final_lr", 1e-5, 1e-6, 0.01, log=True),
+        'final_lr_scale': trial.suggest_float("final_lr_scale", 0.05, 0.01, 0.2),
+        'warmup_steps': warmup_steps,
+        'decay_steps': TOTAL_STEPS
+    }
+
+    if opt in ["PID", "Yogi", 'RAdam', 'Adam', 'Adam.amsgrad', 'Lamb']:
+        train_params['optimizer']['weight_decay'] = \
+            trial.suggest_float("optimizer_weight_decay", 0., 0., 1.,)
+
+    if opt in ['Yogi', 'RAdam', 'Adam', 'Adam.amsgrad', 'Lamb']:
+        train_params['optimizer']['betas'] = (
+            trial.suggest_float("optimizer_beta1", 0.9, 0.1, 0.95),
+            trial.suggest_float("optmizer_beta2", 0.999, 0.1, 1.))
+        train_params['optimizer']['eps'] = \
+            trial.suggest_float("optimizer_eps", 1e-8, 1e-10, 1e-5, log=True)
+
+    if opt == "PID":
+        train_params['optimizer']['momentum'] = \
+            trial.suggest_float("optimizer_momentum", 0., 0., 1.,)
+
+        train_params['optimizer']['dampening'] = \
+            trial.suggest_float("optimizer_dampening", 0., 0., 1.,)
+        train_params['optimizer']['derivative'] = \
+            trial.suggest_float("optimizer_derivative", 10., 5., 20.,)
+        train_params['optimizer']['integral'] = \
+            trial.suggest_float("optimizer_integral", 5., 1., 15.,)
+
+    elif opt == "Yogi":
+        train_params['optimizer']['initial_accumulator'] = \
+            trial.suggest_float("optimizer_initial_accumulator", 1e-6, 1e-10, 1e-5, log=True)
+
+    elif opt == "Lamb":
+           train_params['optimizer']['clamp_value'] = \
+            trial.suggest_float("optimizer_clamp_value", 10, 1, 20)
+
+    return train_params
+
+
+
+def train_model(model, train_params, path, **kwargs):
     shutil.rmtree("./runs")
     writer = SummaryWriter()
 
@@ -181,24 +265,48 @@ def train_model(model, epochs, opt, lr, path, **kwargs):
 
     # model = torch.compile(model)
     import torch_optimizer as optim
+    import pytorch_warmup as warmup
 
-
-    if opt == "PID":
-      optimizer = optim.PID(model.parameters(),
-                            lr=lr,
-                            weight_decay=1e-2)
-    elif opt == "Yogi":
-      optimizer = optim.Yogi(model.parameters(),
-                            lr=lr)
-    elif opt == "RAdam":
-      optimizer = torch.optim.RAdam(model.parameters(),
-                              lr=lr)
-    elif opt == "Adam":
-      optimizer = torch.optim.Adam(model.parameters(),
-                            lr=lr,
-                            betas=(0.5, 0.999))
+    if train_params['opt'] == "PID":
+      optimizer = optim.PID(model.parameters(), **train_params['optimizer'])
+    elif train_params['opt'] == "Yogi":
+      optimizer = optim.Yogi(model.parameters(), **train_params['optimizer'])
+    elif train_params['opt'] == "RAdam":
+      optimizer = torch.optim.RAdam(model.parameters(), **train_params['optimizer'])
+    elif train_params['opt'] == "Adam":
+      optimizer = torch.optim.Adam(model.parameters(), **train_params['optimizer'])
+    elif train_params['opt'] == "Adam.amsgrad":
+      optimizer = torch.optim.Adam(model.parameters(), amsgrad=True, **train_params['optimizer'])
+    elif train_params['opt'] == "Lamb":
+       optimizer = optim.Lamb(model.parameters(), **train_params['optimizer'])
     else:
       raise Exception("Invalid optimizer")
+
+
+    # if opt == "RAdam":
+    #     warmup_scheduler = warmup.RAdamWarmup(optimizer)
+    # else:
+    #     warmup_scheduler = warmup.UntunedLinearWarmup(optimizer)
+
+    # warmup_scheduler = warmup.ExponentialWarmup(optimizer, warmup_period=30)
+
+
+    from lr_scheduler.transformer_lr_scheduler import TransformerLRScheduler
+    from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
+
+    # scheduler = TransformerLRScheduler(optimizer, **train_params['scheduler'])
+    print("WRONG SCHEDULER!!!!\n" * 5)
+
+    scheduler = CosineAnnealingWarmupRestarts(optimizer,
+                                          first_cycle_steps=400,
+                                          cycle_mult=1.0,
+                                          max_lr=0.004,
+                                          min_lr=0.0005,
+                                          warmup_steps=20,
+                                          gamma=0.8)
+
+
+    warmup_scheduler = None
 
     trainer = Trainer(model=model,
                     # enable_chunking=True,
@@ -207,7 +315,11 @@ def train_model(model, epochs, opt, lr, path, **kwargs):
                     optimizer=optimizer,
                     # scheduler=None,
                     # patience = 15
-                    scheduler=ReduceLROnPlateau(optimizer, factor=0.95, threshold=1e-5, patience=3),
+                    # scheduler=torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99),
+                    # scheduler=ReduceLROnPlateau(optimizer, factor=0.5, threshold=1e-5, patience=1),
+                    scheduler=scheduler,
+                    warmup_scheduler=warmup_scheduler,
+                    schedule_every_minibatch=True,
                     additional_losses={
                         # "accurancy": lambda trainer: {"accurancy":
                         #    float(torch.mean(torch.abs(trainer.model(trainer.x_test) - trainer.y_test)).detach())
@@ -241,7 +353,10 @@ def train_model(model, epochs, opt, lr, path, **kwargs):
                 losses[infect_type] = nn.CrossEntropyLoss()(y_pred[is_infected == infect_id],
                                              y_real[is_infected == infect_id]).item()
         losses['Total'] =  nn.CrossEntropyLoss()(y_pred, y_real).item()
-        writer.add_scalars(f'! Loss/test_by_category', losses, epoch)
+
+        # REANABLE
+        #writer.add_scalars(f'! Loss/test_by_category', losses, epoch)
+
         # for i in range(params['TARGET_CLASSES_COUNT']):
         #     for j in range(params['TARGET_CLASSES_COUNT']):
         #         if matrix[i][j] > 0.05:
@@ -265,7 +380,7 @@ def train_model(model, epochs, opt, lr, path, **kwargs):
     # trainer.early_stop_lambda = early_stopper.early_stop
     trainer.set_data(dataset_to_gpu_loader)
     try:
-        trainer.train(epochs, trial=None, log=True, writer=writer, **kwargs) # , chunk_size=680000,
+        trainer.train(train_params['epochs'], trial=None, log=True, writer=writer, **kwargs) # , chunk_size=680000,
     except KeyboardInterrupt:
         print("interrupted")
         # type, val, tb = sys.exc_info()
@@ -279,24 +394,37 @@ def train_model(model, epochs, opt, lr, path, **kwargs):
 
 
 if __name__ == "__main__":
-  import tuner
-  path = "cache2/storage2"
-  storage = Storage(path)
-  params = storage.wait_meta_change("params", None)
-  # trial = tuner.TunedParams({})
-  trial = tuner.load_best("writers_tune_24")
-  model = Model(params, trial)
+    import tuner
+    path = "cache2/storage2"
+    storage = Storage(path)
+    params = storage.wait_meta_change("params", None)
+    # trial = tuner.TunedParams({})
+    trial = tuner.load_best("writers_tune_24")
+    print(trial.params)
+    trial.params['INTERNAL_EMBEDDING_SIZE'] = 128
+    #   trial.params['encoder_num_heads'] = 1
+    trial.params['encoder_count'] = 4
+    trial.params['lr'] = 0.002
 
-  # print("MODEL LOADED\n" * 10)
-  # model = torch.load("results big model GOOD 99 91 97/some_model.pt", map_location=torch.device('cuda:0'))
+    trial.params['opt'] = 'Yogi'
+    trial.params['optimizer_beta1'] = 0.5
+    trial.params['warmup_steps'] = 211
+    print("ENCODER COUNT\n" * 10)
 
-  import os
-  # os.environ["CUDA_HOME"] = "/home/misha-sh/cuda"
+    model = Model(params, trial)
 
-  trainer = train_model(model, 40000, "RAdam", 0.01, path)
-  # run_proc(train_model)
-  print("exit")
+    # print("MODEL LOADED\n" * 10)
+    # model = torch.load("results big model GOOD 99 91 97/some_model.pt", map_location=torch.device('cuda:0'))
 
-  import sys
-  sys.exit(0)
+    import os
+    # os.environ["CUDA_HOME"] = "/home/misha-sh/cuda"
+
+    #   trainer = train_model(model, 40000, "RAdam", 0.01, path)
+    train_params = get_train_params_from_trial(trial)
+    trainer = train_model(model, train_params, path)
+    # run_proc(train_model)
+    print("exit")
+
+    import sys
+    sys.exit(0)
 

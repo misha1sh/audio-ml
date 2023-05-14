@@ -43,7 +43,7 @@ class AsyncDatasetLoaderToGPU:
 
         self.writer = writer
 
-
+        self.batch_size = self.async_dataset_reader.storage.get_meta("params")["batch_size"]
 
         if LOG: print("[gpu] loading test")
         self.x_test = async_dataset_reader.storage.get_meta("x_test").float().cuda()
@@ -178,8 +178,8 @@ class AsyncDatasetLoaderToGPU:
                 self.writer.add_scalar('GPU/Chunk id', candidate.i, epoch)
                 self.writer.add_scalar('GPU/Reuse', candidate.used, epoch)
 
-            for x, y in zip(torch.split(x_train_chunk, self.async_dataset_reader.params["batch_size"]),
-                            torch.split(y_train_chunk, self.async_dataset_reader.params["batch_size"])):
+            for x, y in zip(torch.split(x_train_chunk, self.batch_size),
+                            torch.split(y_train_chunk, self.batch_size)):
                 yield (x, y)
 
             candidate.used += 1
