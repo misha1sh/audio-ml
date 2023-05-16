@@ -70,21 +70,30 @@ def suggest_xformer_encoder(params, model_params, trial):
           "hidden_layer_multiplier": 1,
       },
   } for activation, attention in
-    zip(['relu'] * 10, [{
+    #RELU and GELU the same effect
+    zip(['gelu'] * 10, [{
               "name": "local",
-              "dropout": 0.,
+              "dropout": 0.1,
               "window_size": 3,
           }, {
               "name": "local",
-              "dropout": 0.,
+              "dropout": 0.1,
               "window_size": 7,
           }, {
               "name": "local",
-              "dropout": 0.,
+              "dropout": 0.1,
               "window_size": 3,
+          },{
+              "name": "local",
+              "dropout": 0.1,
+              "window_size": 5,
+          },{
+              "name": "local",
+              "dropout": 0.1,
+              "window_size": 5,
           }, {
               "name": "scaled_dot_product",
-              "dropout": 0.,
+              "dropout": 0.1,
           }
           ]
 
@@ -183,28 +192,33 @@ class Model(nn.Module):
 
 
 
-def get_train_params_from_trial(trial):
+def get_train_params_from_trial(trial, TOTAL_STEPS):
     train_params = {}
 
     opt = trial.suggest_categorical("optimizer", ['RAdam', "PID", "Yogi", 'Adam', 'Adam.amsgrad', 'Lamb'])
     train_params['opt'] = opt
     train_params['optimizer'] = {
-       'lr': trial.suggest_float("lr", 0.01, 0.001, 0.1, log=True)
+       'lr': trial.suggest_float("lr", 0.004, 0.001, 0.01, log=True)
     }
-
-    TOTAL_STEPS = 2500
 
     train_params['epochs'] = TOTAL_STEPS
 
-    warmup_steps = trial.suggest_int("warmup_steps", 100, 1, 300)
-    train_params['scheduler'] = {
-        'init_lr': 1e-10,
-        'peak_lr': train_params['optimizer']['lr'],
-        'final_lr': trial.suggest_float("final_lr", 1e-5, 1e-6, 0.01, log=True),
-        'final_lr_scale': trial.suggest_float("final_lr_scale", 0.05, 0.01, 0.2),
-        'warmup_steps': warmup_steps,
-        'decay_steps': TOTAL_STEPS
-    }
+    # warmup_steps = trial.suggest_int("warmup_steps", 100, 1, 300)
+    # train_params['scheduler'] = {
+    #     'init_lr': 1e-10,
+    #     'peak_lr': train_params['optimizer']['lr'],
+    #     'final_lr': trial.suggest_float("final_lr", 1e-5, 1e-6, 0.01, log=True),
+    #     'final_lr_scale': trial.suggest_float("final_lr_scale", 0.05, 0.01, 0.2),
+    #     'warmup_steps': warmup_steps,
+    #     'decay_steps': TOTAL_STEPS
+    # }
+    train_params['scheduler'] = {"first_cycle_steps": trial.suggest_int("cycle", 400, 300, 1000),
+                                "cycle_mult": 1.0,
+                                "max_lr": train_params['optimizer']['lr'],
+                                "min_lr": trial.suggest_float("min_lr", 0.0005, 0.0001, 0.001, log=True),
+                                "warmup_steps": trial.suggest_int("warmup_steps", 200, 100, 300),
+                                "gamma": trial.suggest_float("scheduler_gamma", 0.5, 0.5, 1.),
+                                "warmup_only_first": False}
 
     if opt in ["PID", "Yogi", 'RAdam', 'Adam', 'Adam.amsgrad', 'Lamb']:
         train_params['optimizer']['weight_decay'] = \
@@ -241,8 +255,9 @@ def get_train_params_from_trial(trial):
 
 
 def train_model(model, train_params, path, **kwargs):
-    shutil.rmtree("./runs")
+    # shutil.rmtree("./runs")
     writer = SummaryWriter()
+    writer.add_text("train_params", str(train_params))
 
     from async_dataset_reader2 import AsyncDatasetReader, AsyncDatasetLoaderToGPU
     dataset_mem_reader = AsyncDatasetReader(path=path, max_kept_in_memory=30, writer=writer)
@@ -292,19 +307,13 @@ def train_model(model, train_params, path, **kwargs):
 
 
     from lr_scheduler.transformer_lr_scheduler import TransformerLRScheduler
-    from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
+    from scheduler import CosineAnnealingWarmupRestarts
 
     # scheduler = TransformerLRScheduler(optimizer, **train_params['scheduler'])
     print("WRONG SCHEDULER!!!!\n" * 5)
 
     scheduler = CosineAnnealingWarmupRestarts(optimizer,
-                                          first_cycle_steps=400,
-                                          cycle_mult=1.0,
-                                          max_lr=0.004,
-                                          min_lr=0.0005,
-                                          warmup_steps=20,
-                                          gamma=0.8)
-
+                                          **train_params['scheduler'])
 
     warmup_scheduler = None
 
@@ -401,14 +410,18 @@ if __name__ == "__main__":
     # trial = tuner.TunedParams({})
     trial = tuner.load_best("writers_tune_24")
     print(trial.params)
-    trial.params['INTERNAL_EMBEDDING_SIZE'] = 128
-    #   trial.params['encoder_num_heads'] = 1
-    trial.params['encoder_count'] = 4
+    trial.params['INTERNAL_EMBEDDING_SIZE'] = 512
+    trial.params['encoder_num_heads'] = 16
+    trial.params['encoder_count'] = 6
     trial.params['lr'] = 0.002
 
     trial.params['opt'] = 'Yogi'
-    trial.params['optimizer_beta1'] = 0.5
-    trial.params['warmup_steps'] = 211
+    # trial.params['optimizer_beta1'] = 0.5
+    print(r"""trial.params['optimizer_beta1'] = 0.9""")
+    trial.params['optimizer_beta1'] = 0.9
+
+    # trial.params['warmup_steps'] = 211
+
     print("ENCODER COUNT\n" * 10)
 
     model = Model(params, trial)
@@ -420,7 +433,11 @@ if __name__ == "__main__":
     # os.environ["CUDA_HOME"] = "/home/misha-sh/cuda"
 
     #   trainer = train_model(model, 40000, "RAdam", 0.01, path)
-    train_params = get_train_params_from_trial(trial)
+    trial2 = tuner.load_best("scheduler_tune_5")
+    trial2.params['lr'] = 0.001
+    trial2.params['min_lr'] = 0.00001
+    print(trial2.params)
+    train_params = get_train_params_from_trial(trial2, 50000)
     trainer = train_model(model, train_params, path)
     # run_proc(train_model)
     print("exit")

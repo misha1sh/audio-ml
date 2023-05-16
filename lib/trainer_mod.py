@@ -181,6 +181,7 @@ class Trainer:
             with torch.no_grad():
                 test_loss = []
                 y_test_pred = []
+                print(self.dataset.x_test.shape[0])
                 for x, y in zip(torch.split(self.dataset.x_test, train_batch_len),
                                 torch.split(self.dataset.y_test, train_batch_len)):
                     test_loss_batch, y_test_pred_batch = \

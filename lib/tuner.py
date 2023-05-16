@@ -157,6 +157,10 @@ class TrialWrapper():
     def should_prune(self):
         return self.trial.should_prune()
 
+    @property
+    def params(self):
+        return self.trial.params
+
 class TunedParams:
     def __init__(self, params):
         self.params = params
