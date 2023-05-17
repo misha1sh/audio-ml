@@ -2,6 +2,7 @@ from dataset_builder import calculate_word_features_for_tokens, get_word_feature
 import onnxruntime as ort
 import numpy as np
 import torch
+import joblib
 
 def torch_model_runner(model):
     model.eval()
@@ -11,7 +12,9 @@ def torch_model_runner(model):
     return func
 
 def onnx_model_runner(path):
-    ort_sess = ort.InferenceSession(path)
+    sess_opt = ort.SessionOptions()
+    sess_opt.intra_op_num_threads = joblib.cpu_count()
+    ort_sess = ort.InferenceSession(path, sess_opt)
     def func(input):
         return ort_sess.run(None, {'input': np.array(input) })[0]
     return func
