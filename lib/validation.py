@@ -318,7 +318,7 @@ import asyncio
 loop = asyncio.get_event_loop()
 for clear_punctuation in [False, True]:
     print("clear_punctuation", clear_punctuation)
-    task_to_wait = loop.create_task(task()),
+    task_to_wait = loop.create_task(task(clear_punctuation)),
     loop.run_until_complete(asyncio.wait(task_to_wait))
 loop.close()
 
