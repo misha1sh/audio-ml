@@ -9,7 +9,10 @@ lib/build*
 */cache/*
 lib/cache2/*
 lib/runs/*
+lib/runs_copy/*
+lib/runs_tensorboard_big*
 lib/run_big/*
+lib/catboost_info/*
 cache/*
 lib/dist*
 lib/lib.egg-info*

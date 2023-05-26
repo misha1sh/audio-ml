@@ -107,12 +107,6 @@ class SavedTrial:
         else:
             raise ValueError(f"Value for parameter '{name}' not found in saved values.")
 
-    def suggest_discrete_uniform(self, name, low, high, q):
-        if name in self.saved_values:
-            return self.saved_values[name]
-        else:
-            raise ValueError(f"Value for parameter '{name}' not found in saved values.")
-
     def suggest_float(self, name, low, high, *, step=None, log=False):
         if name in self.saved_values:
             return self.saved_values[name]
@@ -120,18 +114,6 @@ class SavedTrial:
             raise ValueError(f"Value for parameter '{name}' not found in saved values.")
 
     def suggest_int(self, name, low, high, step=1, log=False):
-        if name in self.saved_values:
-            return self.saved_values[name]
-        else:
-            raise ValueError(f"Value for parameter '{name}' not found in saved values.")
-
-    def suggest_loguniform(self, name, low, high):
-        if name in self.saved_values:
-            return self.saved_values[name]
-        else:
-            raise ValueError(f"Value for parameter '{name}' not found in saved values.")
-
-    def suggest_uniform(self, name, low, high):
         if name in self.saved_values:
             return self.saved_values[name]
         else:

@@ -125,6 +125,7 @@ class Model(nn.Module):
           trial.suggest_categorical("INTERNAL_EMBEDDING_SIZE2", [32, 16])# 256
 
         model_params["lstm_layers"] = trial.suggest_int("lstm_layers", 1, 0, 3)
+        model_params["lstm_macro_layers"] = trial.suggest_int("lstm_macro_layers", 0, 0, 3)
 
         encoder_configs = suggest_xformer_encoder(params, model_params, trial)
 
@@ -162,10 +163,12 @@ class Model(nn.Module):
             nn.BatchNorm1d(N_words),
             nn.ReLU(),
           ] +
-          ([
+          (([
             Model.LSTM(model_params, trial),
             nn.BatchNorm1d(N_words),
-          ] if model_params["lstm_layers"] > 0 else [])
+            nn.Linear(INTERNAL_EMBEDDING_SIZE2, INTERNAL_EMBEDDING_SIZE2),
+            nn.ReLU(),
+          ] * model_params['lstm_macro_layers'])if model_params["lstm_layers"] > 0 else [])
           +
           [
             nn.Flatten(1), # (N, N_words* INTERNAL_EMBEDDING_SIZE)
@@ -422,6 +425,8 @@ if __name__ == "__main__":
 
     # trial.params['warmup_steps'] = 211
 
+    print("OPTIMAL PARAMS TRIAL 1", trial.params)
+
     print("ENCODER COUNT\n" * 10)
 
     model = Model(params, trial)
@@ -437,6 +442,8 @@ if __name__ == "__main__":
     trial2.params['lr'] = 0.001
     trial2.params['min_lr'] = 0.00001
     print(trial2.params)
+    print("OPTIMAL PARAMS TRIAL 2", trial2.params)
+    exit(0)
     train_params = get_train_params_from_trial(trial2, 50000)
     trainer = train_model(model, train_params, path)
     # run_proc(train_model)

@@ -309,7 +309,7 @@ async def task(clear_punctuation):
                 print("skipped ", rtf_path, len(encoded), ex)
             # raise
             i += 1
-            if i> 2: break
+            # if i> 2: break
 
     print(res)
 
