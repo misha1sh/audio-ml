@@ -59,9 +59,10 @@ class FileEventHandler(pyinotify.ProcessEvent):
 
 
 class Storage:
-    def __init__(self, path):
+    def __init__(self, path, enable_watcher=True):
         self.path = Path(path)
-        self.handler = FileEventHandler([path])
+        if enable_watcher:
+            self.handler = FileEventHandler([path])
         os.makedirs(self.path, exist_ok=True)
 
     def clear(self):
